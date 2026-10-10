@@ -142,11 +142,11 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 | --- | --- | --- |
 | Rover server `:8000` with `/drive /speed /grip /arm /snapshot /stop /pose` | 🟡 `robot_server.py` not in repo; the endpoints below are **inferred from callers** | Rover squad |
 | Drone server `:8001` with `/takeoff /goto /scan /land /pose` | 🟡 Not in repo. `fleet.py` drives Crazyflies **in-process with cflib** instead of over HTTP | Drone squad |
-| AI manager `:8002` with `/mission /approve /stop /state` | 🟡 Not in repo. `fleet.py::run` is a one-shot CLI: no server, no state, no approval | AI manager squad |
-| Human **approve / change / stop** gate | 🟡 Nothing pauses between plan and action. Today the model acts immediately | AI manager squad |
-| Re-plan on failure, live plan change ("skip the left side…") | 🟡 Not implemented. Needs a persistent chat session that can take a new user turn mid-mission | AI manager squad |
+| AI manager `:8002` with `/mission /approve /stop /state` | ✅ in `manager/` (on mocks; not yet on real robots). `fleet.py::run` stays the one-shot reference | AI manager squad |
+| Human **approve / change / stop** gate | ✅ in `manager/` (plan → Approve → run, `409` on stale approvals, Stop from any state) | AI manager squad |
+| Re-plan on failure, live plan change ("skip the left side…") | ✅ in `manager/` (supervisor checkpoints + `/change`; the live change needs a Gemini key) | AI manager squad |
 | Dashboard reading `/state` | 🟡 Not in repo | Dashboard |
-| `MOCK=1` everywhere | 🟡 Done in `fleet.py` and `fleet_agent.py`; missing in `brain.py` | AI manager squad |
+| `MOCK=1` everywhere | 🟡 Done in `fleet.py`, `fleet_agent.py` and `manager/` (`ROVER=mock DRONE=mock`); missing in `brain.py` | AI manager squad |
 | Unified drone + rover on one map | ✅ in `fleet.py` via the rider trick; the digital-twin view is 🟡 | Shared-map squad |
 
 ### Rover HTTP API as the callers use it (✅ verified against call sites, 🟡 server not seen)
@@ -164,9 +164,28 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 ⚠️ `fleet.py` sends `y = SIGN_Y * …` because the RoboMaster SDK treats **+y as right** while `brain.py` documents `left_m`. The two files disagree about which side is positive. The rover server must pick one convention and document it.
 ⚠️ `/drive` is open loop and blocking in the plan. `/speed` must auto-expire after `t`, so a dropped Wi-Fi/5G link stops the robot instead of leaving it driving.
 
-### AI manager 🟡
+### AI manager ✅ (mocks) / 🟡 (real robots)
 
 Full design, the `/state` contract for the dashboard, and the API asks to the rover and drone squads: **[docs/ai-manager-plan.md](docs/ai-manager-plan.md)**. That file is the source of truth for anything on `:8002`.
+
+#### AI manager quick start
+
+```bash
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-manager.txt
+.venv/bin/python -m pytest                                   # 113 tests on mock robots, ~9 s
+
+# one mission in the terminal, fake robots, no API key (canned plan + rule supervisor)
+MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli "Find the object near the exit and bring it back" --auto-approve --mentor
+
+# the dashboard's server on :8002 (add GEMINI_API_KEY for real planning)
+ROVER=mock DRONE=mock .venv/bin/python -m manager.server
+curl localhost:8002/state
+
+# real robots, one env var each (mixed mode works)
+ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv/bin/python -m manager.server
+```
+
+Extra env vars: `MOCK_TIME_SCALE` (simulated clock speed-up), `MOCK_FAIL=goto:0.2,grip:0.3` (failure injection), `CHANGE_NEEDS_APPROVAL=1`, `PERCEPTION=mock|gemini`, `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` / `ROVER_ARM_MODE` (see the plan doc §10).
 
 ---
 

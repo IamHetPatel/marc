@@ -5,6 +5,20 @@
 
 ---
 
+## Status (updated 2026-10-10)
+
+| Milestone | State |
+| --- | --- |
+| **P0** models, adapter protocols, `/state` contract | ✅ done: `manager/models.py`, `adapters/base.py`, §9 |
+| **P1** mock world + adapters + tools + executor, `/state` served | ✅ done |
+| **P2** text → LLM plan → Approve → full run on mocks | ✅ done with a **scripted** LLM and with the canned plan; **not yet run against live Gemini** (needs the key; `pytest -m live` is the first-hour check, §11) |
+| **P3** Stop / change / replan, `rover_http` on the real EP, grip line, `rover_approach` on the real camera | 🟡 Stop / change / replan ✅ on mocks. `rover_http` ✅ against a fake server. **Nothing touched a real robot yet** |
+| **P4 / P5** real robots, dock mode, 10-run metrics | ⬜ not started |
+
+Run it: see [README → AI manager quick start](../README.md#ai-manager-quick-start). 113 tests run on mocks in ~9 s (`pytest`), plus 2 opt-in live Gemini tests (`pytest -m live`); `arena.json` values are **placeholders** until measured on the floor.
+
+---
+
 ## 0. In one paragraph
 
 The manager is the only component that talks to the LLM. It turns one sentence into a **structured plan**, waits for a human to **Approve** that exact plan, **executes** it step by step through robot adapters, **verifies** results with the rover camera, and **re-plans** when a step fails or a human types a change. It reaches robots only over HTTP (rover `:8000`, drone `:8001`) and serves its own state to the dashboard on `:8002`. It runs against a mock world first (`MOCK=1`). The same mock is our Level-3 backup demo.
@@ -79,7 +93,8 @@ manager/
     drone_http.py    client for drone server :8001
     mock.py          MockWorld, MockRover, MockDrone (+ failure injection)
   localization.py    rover pose = latest absolute fix + odometry since; exposes source + age
-  perception.py      Gemini ER calls: identify, point-to-target, "is it in the gripper?"
+  llm.py             the only Gemini caller: structured output, model fallback chain, runs/ logs, ScriptedLLM
+  perception.py      Gemini ER calls (identify, point-to-target, "is it in the gripper?") + ground-truth mock
   tools.py           the action vocabulary (§5): validate args → safety → adapter → state
   safety.py          geofence, caps, mentor gate, stop_all()
   planner.py         mission text + arena + robot status → Plan (structured output)
@@ -88,12 +103,14 @@ manager/
   controller.py      mission state machine (§4), owns the worker thread
   fallback_plans.py  canned plan for the demo mission if the LLM is down
   server.py          FastAPI app on :8002 (CORS on)
-  cli.py             python -m manager.cli "mission text" [--auto-approve]
+  runtime.py         config -> adapters -> Ctx -> Controller (ROVER and DRONE chosen independently)
+  cli.py             python -m manager.cli "mission text" [--auto-approve] [--mentor]
 tests/
-  test_tools.py  test_controller.py  test_mission_mock.py  test_server.py
+  test_tools.py  test_controller.py  test_mission_mock.py  test_server.py  test_planning.py
+  test_llm.py  test_http_adapters.py (+ fake_robot_servers.py)  test_live.py (opt-in, hits Gemini)
 ```
 
-Dependencies: `google-genai requests fastapi uvicorn pydantic pytest`. Python 3.10+, runs on a Mac. The rover's Python 3.8 Windows laptop is not involved.
+Dependencies: `requirements-manager.txt` (`google-genai requests fastapi uvicorn pydantic pytest httpx pillow`; Pillow renders the mock camera). Python 3.10+ (developed on 3.12; the Mac's default `python3` is 3.9, so use `uv venv --python 3.12 .venv`), runs on a Mac. The rover's Python 3.8 Windows laptop is not involved.
 
 Robot selection is one env var per robot, so mixed mode works (real rover + mock drone = Level 3):
 
@@ -283,9 +300,10 @@ Cost: each VLM call takes roughly 1–3 s, so an approach is 5–10 calls. That 
 
 **Rover (`robot_server.py`, `:8000`):**
 - `/speed?x&y&z&t` **auto-stops after `t`**, so a lost link means a stopped robot.
-- `/snapshot` returns a JPEG. `/stop`, `/grip?action`, and `/arm?x&y` (or arm presets) are already used by the starter code.
+- `/snapshot` returns a JPEG. `/stop` and `/grip?action=open|close` are already used by the starter code.
+- **`/arm?preset=pick|carry|home`** (our default). If the rover squad only has relative `/arm?x&y` (millimetres), set `ROVER_ARM_MODE=relative` and tune `ARM_TARGETS` in `adapters/rover_http.py` on the floor.
 - `/pose` → `{x, y, yaw}` from wheel odometry. We fuse it with the Lighthouse fix ourselves.
-- **Agree on one sign for sideways `y`.** `brain.py` says +y = left, `fleet.py` flips it because the SDK uses +y = right. Pick one and write it in the README.
+- **Agree on one sign for sideways `y`.** `brain.py` says +y = left, `fleet.py` flips it because the SDK uses +y = right. Pick one and write it in the README. Until then our client assumes **`/drive` y = left** and **`/speed` y = right** (the only evidence in the starter files) and exposes `ROVER_DRIVE_Y_SIGN` / `ROVER_SPEED_Y_SIGN` to flip either. First floor test: strafe left with `/speed` and check.
 - Optional: the IR distance sensor reading, if the kit has one.
 
 **Drone (`:8001`):**
@@ -364,3 +382,21 @@ Cost: each VLM call takes roughly 1–3 s, so an approach is 5–10 calls. That 
 3. Crazyflie model (2.1 or Brushless) and real flight time. Is a **Flow deck** fitted? The `zrange` object detection needs a downward range sensor.
 4. Does Lighthouse cover the whole area the EP drives in, or only the cage?
 5. Does the ER 2 preview accept structured output + images in one call, and how fast is it?
+
+---
+
+## 17. Implementation notes (decisions made while building; read before changing the code)
+
+- **`StepDraft` is flat.** Gemini's response schema has no free-form dicts, so the LLM fills a flat model (`target`, `x`, `y`, `mode`, `question`, ...) and we turn it into `Step.args`. Adding a tool argument means adding a field there.
+- **Planner returns drafts, the controller assigns step ids** when it commits the plan. A planner call that times out keeps running in a thread; if it assigned ids itself, its late finish would corrupt the numbering.
+- **Epochs.** Every background job captures the cancel `Event` of the epoch it started in; `stop()`, a restarted plan and a new mission cancel it. A job that finishes after cancellation discards its result. Each run gets its own `Ctx` copy so a stale tool loop sees *its* cancel flag, not the new mission's.
+- **Cross-cutting rules live in `tools.run_action`**, not in each tool: arg validation, mentor gate, "no rover motion while the drone is out", fault injection. The executor tracks `drone_out` from `drone_scan`/`drone_goto` until `drone_dock`/`drone_land`, and lands the drone if a mission ends with it still up.
+- **`rover_goto` to a finding stops 0.6 m short** so the camera can see the object (a rover standing on it sees nothing). Zones are clipped to the flight cage for `drone_scan`.
+- **Checkpoints:** `drone_scan`, `rover_inspect`, `ask_human` always go to the supervisor; failures and unresolved `$finding.*` references too. A failed `drone_dock` becomes `drone_land` (risk table, §15). A failed mentor gate becomes an `ask_human`.
+- **Replan budget** is counted by the *original* failed step (retries inherit their lineage), so "2 per step" really holds even though a retry is a new step id. Human changes never consume budget.
+- **`ask_human` is a step.** The supervisor's `ask_human` decision inserts one (plus a retry of the failed step); the answer arrives through `/change` and is returned as the step result.
+- **No-LLM mode is a feature:** no `GEMINI_API_KEY` means the canned plan (flagged `fallback: true`) plus `RuleSupervisor`. A typed change cannot be applied in that mode, and the supervisor says so instead of pretending.
+- **Mixed mode (real rover + mock drone):** a mock drone's "docked" pose is *not* used as the rover's fix (it would claim the rover never moves), so the rover falls back to start cross + odometry.
+- **Mock perception is ground truth** read from the mock world (same projection that renders the image), so the grip-line loop is exercised for real; set `PERCEPTION=gemini` to send the synthetic frames to Gemini instead (not meaningful until we have the Saturday phone photos, §12).
+- **`/state` additions** beyond the §9 example (additive, allowed): `mission.reason`, `mission.pending_question`, `mission.error`, `previous_plan` (for the side-by-side), `log`.
+- **Not built yet:** mid-scan battery recall (the drone server owns the flight; we only refuse to launch below `DRONE_MIN_V`), metrics script (§13), Saturday photo set (§12).

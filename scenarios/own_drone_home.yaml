@@ -1,5 +1,6 @@
 # Second use case: one of OUR drones went down. Same chase, but it is not hazardous and it goes home, not to disposal.
 name: own_drone_home
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "Bring our own crashed drone home"
 mission: "One of our own drones went down in field A. Find it and bring it back to the base."
 targets:

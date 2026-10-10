@@ -96,6 +96,7 @@ class MockObject(BaseModel):
 
 
 class Arena(BaseModel):
+    kind: str = "mock"                              # "mock" (arena.json) or "floor" (arena.floor.json); scenarios name one
     calibrated: bool = False
     bounds: Rect
     drone_cage: Rect
@@ -131,6 +132,7 @@ def load_arena(path: Optional[str] = None) -> Arena:
     cage = raw["drone_cage"]
     plate = raw.get("plate_offset", {})
     return Arena(
+        kind=raw.get("kind", "mock"),
         calibrated=raw.get("calibrated", False),
         bounds=Rect(**raw["bounds"]),
         drone_cage=Rect(**{k: cage[k] for k in ("x0", "y0", "x1", "y1")}),

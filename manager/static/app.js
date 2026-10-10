@@ -90,6 +90,9 @@
 
   /* The use cases on the start screen. Scenario files not listed here still show, with their own title. */
   var USECASE = {
+    floor_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Mark it, check it with the camera, and carry it to the disposal zone after a person says yes." },
+    floor_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches the whole field on its own; the rover goes to what it finds." },
+    floor_mark_and_drive: { title: "Mark and drive", icon: "rover", text: "The scout marks the crash site, the rover drives there. The first thing to get working." },
     t3_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Find it, check it with the camera, and carry it to the disposal zone after a person says yes." },
     own_drone_home: { title: "Our own drone went down", icon: "scout", text: "Find our crashed scout and bring it back to the base. No authorization needed: it is ours." },
     decoy_bottle: { title: "False alarm", icon: "alert", text: "The scout flags something; the rover's camera sees it is just a bottle and leaves it." },
@@ -97,7 +100,7 @@
     t2_mark_and_drive: { title: "Mark and drive", icon: "rover", text: "The scout marks a crash site, the rover drives there and takes a look." },
     overhead_fetch: { title: "Overhead camera finds it", icon: "camera", text: "A ceiling camera spots the wreck instead of the scout; the rover fetches it." }
   };
-  var USECASE_ORDER = ["t3_recover_hostile", "own_drone_home", "decoy_bottle", "t4_search_field_a", "t2_mark_and_drive", "overhead_fetch"];
+  var USECASE_ORDER = ["floor_recover_hostile", "floor_search_field_a", "floor_mark_and_drive", "t3_recover_hostile", "own_drone_home", "decoy_bottle", "t4_search_field_a", "t2_mark_and_drive", "overhead_fetch"];
 
   /* What a person sees instead of 16 technical steps: the phases of a recovery. */
   var PHASES = [

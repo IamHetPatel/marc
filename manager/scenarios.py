@@ -42,6 +42,7 @@ class Scenario(BaseModel):
     mission: str = ""                      # used for an AI mission when there is no scripted plan
     targets: list[ScenarioTarget] = Field(default_factory=list)
     plan: Optional[list[StepDraft]] = None
+    arena: Optional[str] = None            # "mock" or "floor": the field its coordinates belong to (None: any)
 
 
 class UnknownScenario(KeyError):
@@ -62,9 +63,12 @@ def load_scenario(name: str) -> Scenario:
     return Scenario(**{**raw, "name": name})
 
 
-def list_scenarios() -> list:
+def list_scenarios(arena_kind: Optional[str] = None) -> list:
+    """Every scenario, or only those that fit `arena_kind` (a scenario's coordinates belong to one field)."""
     out = []
     for path in sorted(SCENARIO_DIR.glob("*.yaml")):
         sc = load_scenario(path.stem)
-        out.append({"name": sc.name, "title": sc.title, "has_plan": bool(sc.plan)})
+        if arena_kind and sc.arena and sc.arena != arena_kind:
+            continue
+        out.append({"name": sc.name, "title": sc.title, "has_plan": bool(sc.plan), "arena": sc.arena})
     return out

@@ -1,6 +1,7 @@
 # Tier T3: find, triage, get the operator's yes, grip the hostile drone and carry it to the disposal zone.
 # The gripper will not close on a hazardous finding without request_authorization (enforced in code).
 name: t3_recover_hostile
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "Recover the hostile drone from field A"
 mission: "A hostile drone crashed in field A. Find it, check it, and move it to the disposal zone if it is safe to handle."
 targets:

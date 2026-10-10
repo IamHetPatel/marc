@@ -1,4 +1,5 @@
 {
+  "kind": "floor",
   "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. FIELD: 5 m (x) by 3 m (y), assumed centred on the Lighthouse origin (which is inside the net): x -2.5..2.5, y -1.5..1.5. CHECK on the floor: put a Crazyflie in two opposite corners and read its pose; if the field is shifted or the long side runs along y, change bounds, drone_cage, zones and home here AND drone_server.py DEFAULT_CAGE (tests/test_integration.py keeps the two cages equal). drone_cage = bounds 0.3 m in from each wall. Zones, home, launch pad and overhead tags are provisional; measure them with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
   "calibrated": false,
   "_view_note": "view = what the dashboard map shows: the 5 x 3 m field plus a 0.4 m margin (the map also grows by itself if a robot or the pad is outside). launch_pad = where the scout sits before takeoff; the drone server reports the real one (its first takeoff spot) once it has flown. Measure it and fill it in.",

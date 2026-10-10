@@ -1,0 +1,17 @@
+# FLOOR (manager/arena.floor.json): the wreck is a dummy object at a FIXED spot, so the target Crazyflie can ride on the
+# rover (ROVER_RIDER=target). Before the run: put the wreck down, hold the landed scout over it, read
+# curl "localhost:8001/pose", and write that x, y below in BOTH places marked WRECK.
+# The search itself uses the simulated downward camera: it "sees" the wreck when the scout flies over this x, y.
+name: floor_search_field_a
+arena: floor
+title: "Search field A (floor)"
+mission: "A hostile drone crashed somewhere in field A. Search the field, then drive the rover to whatever the scout finds."
+targets:
+  - {id: t1, kind: hostile_drone, source: fixed, x: -0.2, y: 0.0}          # WRECK (only here: the scout finds it)
+plan:
+  - {robot: drone, action: drone_search, target: "$zone.field_a", why: "Scout flies a search pattern over field A"}
+  - {robot: drone, action: drone_mark, target: "$finding.f1", why: "Scout hovers over what it found so everyone can see it"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to the marked spot (stops 0.6 m short)"}
+  - {robot: drone, action: drone_home, why: "Scout flies back to its launch pad and lands, out of the rover's way"}
+  - {robot: rover, action: rover_inspect, question: "What is in front of the robot?", why: "Camera checks the object"}
+  - {robot: manager, action: report, text: "Search complete: the object was found and photographed.", why: "Tell the operator"}

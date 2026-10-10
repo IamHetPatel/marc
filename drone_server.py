@@ -76,7 +76,7 @@ def takeoff():
     if pc is None:
         print("Taking off...")
         pc = PositionHlCommander(scf, default_height=FLY_Z, default_velocity=0.3)
-        pc.take_off(FLY_Z, 1.0)
+        pc.take_off(height=FLY_Z, velocity=0.5)
     return jsonify({"status": "ok"})
 
 @app.route("/land")
@@ -91,7 +91,7 @@ def land():
     
     if pc is not None:
         print("Landing...")
-        pc.land(0.0, 1.0)
+        pc.land(velocity=0.5)  # land() only takes velocity, not (height, velocity)
         pc = None
     return jsonify({"status": "ok"})
 
@@ -157,13 +157,13 @@ def scan():
         if stop_flag:
             print("Scan aborted by emergency stop!")
             if pc:
-                pc.land(0.0, 1.0)
+                pc.land(velocity=0.5)
                 pc = None
             return jsonify({"status": "aborted", "objects_found_at": []})
         pc.go_to(px, py, FLY_Z)
         
     if pc:
-        pc.land(0.0, 1.0)
+        pc.land(velocity=0.5)
         pc = None
     
     # Process the scan to find obstacles
@@ -200,7 +200,7 @@ def dock():
         
     print("Docking (returning to 0,0)...")
     pc.go_to(0.0, 0.0, FLY_Z)
-    pc.land(0.0, 1.0)
+    pc.land(velocity=0.5)
     pc = None
     return jsonify({"status": "ok"})
 

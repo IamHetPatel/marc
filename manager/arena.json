@@ -1,0 +1,20 @@
+{
+  "_note": "PLACEHOLDER VALUES. Everything marked calibrated:false must be measured on the floor (plan §16). Metres, Lighthouse frame, yaw in degrees.",
+  "calibrated": false,
+  "bounds": {"x0": 0.0, "y0": 0.0, "x1": 4.0, "y1": 3.0},
+  "drone_cage": {"x0": 0.3, "y0": 0.3, "x1": 3.7, "y1": 2.7, "z_max": 1.2},
+  "home": {"x": 0.3, "y": 0.3, "yaw": 0.0},
+  "plate_offset": {"x": 0.0, "y": 0.0, "yaw": 0.0, "dock_z": 0.27},
+  "zones": {
+    "exit":             {"rect": [2.6, 0.0, 4.0, 1.4]},
+    "charging_station": {"rect": [0.0, 1.8, 1.2, 3.0]},
+    "left_half":        {"rect": [0.0, 0.0, 2.0, 3.0]},
+    "right_half":       {"rect": [2.0, 0.0, 4.0, 3.0]},
+    "test_zone":        {"rect": [0.3, 0.3, 3.7, 2.7]}
+  },
+  "camera": {"width": 640, "height": 360, "fov_deg": 70.0, "grip_line_row": 300, "deadband_px": 40},
+  "mock_objects": [
+    {"label": "cardboard box", "x": 3.1, "y": 0.6, "height": 0.25, "grippable": true,  "color": "#b5814a"},
+    {"label": "red cup",       "x": 1.0, "y": 2.2, "height": 0.12, "grippable": true,  "color": "#c0392b"}
+  ]
+}

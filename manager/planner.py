@@ -14,10 +14,10 @@ log = logging.getLogger("manager.planner")
 
 MAX_STEPS = 30
 ROVER_MOTION = {n for n, s in REGISTRY.items() if s.moves_rover}
-DRONE_LAUNCH = {"drone_scan", "drone_goto"}
+DRONE_LAUNCH = {"drone_scan", "drone_goto", "drone_takeoff", "drone_mark", "drone_search"}
 DRONE_RECOVER = {"drone_dock", "drone_land"}
 
-RULES = """\
+HEADER = """\
 You are the mission planner of FleetPilot, a human-supervised team of two robots.
 
 ROBOTS
@@ -27,18 +27,29 @@ ROBOTS
   camera and can pick them up.
 
 RULES
-1. Drones find, the rover verifies and fetches. Never use the rover to search a whole area when the drone can scan it.
-2. The drone rides on the rover. The rover must NOT move while the drone is in the air: after drone_scan or
-   drone_goto always call drone_dock (or drone_land) before any rover_goto, rover_search or rover_approach.
-3. Scan hits get ids f1, f2, ... in the order of strength. They do not exist yet when you plan: refer to them as
-   "$finding.f1". Use "$zone.<name>" for named zones and "$home" for the start position.
-4. Always verify with rover_inspect before concluding anything. End with a report step for the human.
-5. Only pick things up if the mission asks to bring, fetch, remove or move something. The pick-up sequence is:
-   rover_arm pick, rover_grip open, rover_approach, rover_grip close, rover_arm carry, rover_check_grip,
-   then rover_goto "$home".
-6. Use only the actions listed below, with the argument names shown. Leave unused fields null.
-7. 3 to 15 steps. Each step's "why" is one short sentence a non-technical person understands.
 """
+
+DOCK_RULE = (
+    "The drone rides on the rover. The rover must NOT move while the drone is in the air: after drone_scan or "
+    "drone_goto always call drone_dock (or drone_land) before any rover_goto, rover_search or rover_approach.")
+
+
+def rules_text(dock_mode: bool) -> str:
+    """The rules block shared by the planner and supervisor prompts. The docking rule only exists in DOCK_MODE."""
+    rules = [
+        "Drones find, the rover verifies and fetches. Never use the rover to search a whole area when the drone "
+        "can scan it.",
+        *([DOCK_RULE] if dock_mode else []),
+        'Scan hits get ids f1, f2, ... in the order of strength. They do not exist yet when you plan: refer to them '
+        'as "$finding.f1". Use "$zone.<name>" for named zones and "$home" for the start position.',
+        "Always verify with rover_inspect before concluding anything. End with a report step for the human.",
+        "Only pick things up if the mission asks to bring, fetch, remove or move something. The pick-up sequence is: "
+        'rover_arm pick, rover_grip open, rover_approach, rover_grip close, rover_arm carry, rover_check_grip, '
+        'then rover_goto "$home".',
+        "Use only the actions listed below, with the argument names shown. Leave unused fields null.",
+        "3 to 15 steps. Each step's \"why\" is one short sentence a non-technical person understands.",
+    ]
+    return HEADER + "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1)) + "\n"
 
 
 @dataclass
@@ -57,8 +68,9 @@ def step_to_draft(step: Step) -> StepDraft:
     return StepDraft(robot=step.robot, action=step.action, why=step.why, **step.args)
 
 
-def validate_drafts(drafts: list, *, drone_out: bool = False) -> list:
-    """Static checks on LLM output. Returns a list of human-readable problems (empty = fine)."""
+def validate_drafts(drafts: list, *, drone_out: bool = False, dock_mode: bool = False) -> list:
+    """Static checks on LLM output. Returns a list of human-readable problems (empty = fine).
+    Without docking there is no 'rover must wait for the drone' rule; the separation check happens at run time."""
     problems = []
     if not drafts:
         return ["the plan has no steps"]
@@ -72,7 +84,7 @@ def validate_drafts(drafts: list, *, drone_out: bool = False) -> list:
             drone_out = True
         elif d.action in DRONE_RECOVER:
             drone_out = False
-        elif d.action in ROVER_MOTION and drone_out:
+        elif dock_mode and d.action in ROVER_MOTION and drone_out:
             problems.append(f"step {i}: {d.action} while the drone is still in the air (dock it first)")
     return problems
 
@@ -89,11 +101,11 @@ def compact_plan(steps: list) -> str:
 
 
 class Planner:
-    def __init__(self, llm, arena: Arena):
-        self.llm, self.arena = llm, arena
+    def __init__(self, llm, arena: Arena, dock_mode: bool = False):
+        self.llm, self.arena, self.dock_mode = llm, arena, dock_mode
 
     def fallback(self, text: str) -> PlanResult:
-        return PlanResult(demo_plan(text, self.arena), True,
+        return PlanResult(demo_plan(text, self.arena, self.dock_mode), True,
                           "Using the built-in demo plan (the AI planner was not available).")
 
     def plan(self, text: str, *, previous: Optional[list] = None, change: Optional[str] = None,
@@ -108,14 +120,14 @@ class Planner:
             except LLMError as e:
                 log.warning("planner LLM failed: %s", e)
                 break
-            problems = validate_drafts(draft.steps)
+            problems = validate_drafts(draft.steps, dock_mode=self.dock_mode)
             if not problems:
                 return PlanResult(draft.steps, False, draft.summary)
             log.warning("plan rejected (attempt %d): %s", attempt + 1, problems)
         return self.fallback(text)
 
     def _prompt(self, text, previous, change, robots) -> str:
-        parts = [RULES, arena_text(self.arena), "ROBOT STATUS\n" + json.dumps(robots or {}),
+        parts = [rules_text(self.dock_mode), arena_text(self.arena), "ROBOT STATUS\n" + json.dumps(robots or {}),
                  "ACTIONS\n" + vocabulary_text(),
                  'Reply with JSON {"summary": <one sentence>, "steps": [...]}. Each step: robot, action, why, '
                  "and only the argument fields that action documents.",

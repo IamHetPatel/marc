@@ -2,8 +2,11 @@
 
 This is also our Level-3 backup demo (docs/ai-manager-plan.md §12). What it models on purpose:
   * rover wheel odometry that drifts (scale error, strafing drifts more) in its own frame
-  * a drone that rides on the rover's plate, takes off from it, scans with +-10 cm noise and false positives,
-    drains battery, and can only dock if the rover has not moved since takeoff
+  * a scout drone. With DOCK_MODE=0 (default) it starts landed on a launch pad beside the rover; with DOCK_MODE=1
+    it rides the rover's plate and can only dock if the rover has not moved since takeoff. Scans with +-10 cm
+    noise and false positives, drains battery
+  * a "target" drone: the first own/hostile drone in the world, readable through pose(cf="target") the way the
+    second Crazyflie's Lighthouse pose will be
   * a pinhole-ish front camera: objects project to (column, row) so the grip-line visual servoing is real
   * failure injection (MOCK_FAIL=goto:0.2,grip:0.3)
 Simulated time runs `mock_time_scale` times faster than the wall clock.
@@ -56,7 +59,11 @@ class MockWorld:
         self.held = None
         self.gripper = "closed"
         self.arm_pose = "home"
-        self.drone = {"state": "docked", "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "battery_v": 4.1}
+        if cfg.dock_mode:
+            self.drone = {"state": "docked", "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "battery_v": 4.1}
+        else:                           # launch pad 0.3 m ahead of the rover's start, on the floor
+            self.drone = {"state": "landed", "x": arena.home.x + 0.3, "y": arena.home.y, "z": 0.0, "yaw": 0.0,
+                          "battery_v": 4.1}
         self.takeoff_rover = None        # rover pose when the drone left the plate
         self.abort = threading.Event()   # set by drone.land() to interrupt a running scan
 
@@ -145,7 +152,15 @@ class MockWorld:
                 ox, oy = _rot(self.arena.plate_offset.x, self.arena.plate_offset.y, self.rover[2])
                 d.update(x=self.rover[0] + ox, y=self.rover[1] + oy, z=self.arena.dock_z,
                          yaw=_wrap(self.rover[2] + (self.arena.plate_offset.yaw or 0.0)))
-            return {k: round(v, 3) if isinstance(v, float) else v for k, v in d.items()}
+            return {"ok": True, **{k: round(v, 3) if isinstance(v, float) else v for k, v in d.items()}}
+
+    def target_pose(self) -> dict:
+        """Ground truth of the 'crashed drone' (the real target Crazyflie reports this via Lighthouse)."""
+        with self.lock:
+            for o in self.objects:
+                if o.get("kind") in ("hostile_drone", "own_drone"):
+                    return {"ok": True, "x": round(o["x"], 3), "y": round(o["y"], 3), "z": 0.0, "state": "landed"}
+        return {"ok": False, "error": "no target drone"}
 
 
 class SimClock:
@@ -216,17 +231,17 @@ class MockDrone:
         self.w = world
         self.rtt_ms = 15
 
-    def pose(self) -> dict:
-        return self.w.drone_pose()
+    def pose(self, cf: str = "scout") -> dict:
+        return self.w.target_pose() if cf == "target" else self.w.drone_pose()
 
-    def takeoff(self) -> dict:
+    def takeoff(self, z: float = FLY_Z) -> dict:
         w = self.w
         with w.lock:
             if w.drone["state"] == "flying":
                 return {"ok": True, "pose": w.drone_pose()}
             pose = w.drone_pose()
             w.takeoff_rover = list(w.rover) if w.drone["state"] == "docked" else None
-            w.drone.update(state="flying", x=pose["x"], y=pose["y"], z=FLY_Z)
+            w.drone.update(state="flying", x=pose["x"], y=pose["y"], z=z)
         w.abort.clear()
         w.advance(2.0)
         return {"ok": True, "pose": w.drone_pose()}
@@ -276,6 +291,8 @@ class MockDrone:
 
     def dock(self) -> dict:
         w = self.w
+        if not w.cfg.dock_mode:
+            return {"ok": False, "docked": False, "error": "docking disabled"}
         with w.lock:
             if w.drone["state"] == "docked":
                 return {"ok": True, "docked": True}

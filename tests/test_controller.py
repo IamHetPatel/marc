@@ -16,7 +16,7 @@ def plan_draft(*steps, summary="Test plan"):
     return PlanDraft(summary=summary, steps=list(steps))
 
 
-SCAN_DOCK = [draft("drone_scan", target="$zone.exit"), draft("drone_dock")]
+SCAN_DOCK = [draft("drone_scan", target="$zone.field_a"), draft("drone_dock")]
 SHORT_PLAN = [*SCAN_DOCK, draft("rover_goto", target="$finding.f1"), draft("report", text="done")]
 
 
@@ -42,7 +42,7 @@ def test_the_robots_do_not_move_before_approval(make_ctrl):
     c.start_mission("Check the exit")
     wait_status(c, "awaiting_approval")
     time.sleep(0.1)
-    assert c.world.t == 0.0 and c.world.drone["state"] == "docked"
+    assert c.world.t == 0.0 and c.world.drone["state"] == "landed" and c.world.drone["z"] == 0.0
 
 
 def test_cannot_start_a_second_mission_while_one_is_active(make_ctrl):
@@ -79,17 +79,17 @@ def test_approve_is_rejected_when_there_is_nothing_to_approve(make_ctrl):
 
 
 def test_change_in_awaiting_approval_replans_and_keeps_the_old_plan(make_ctrl):
-    revised = [draft("drone_scan", target="$zone.charging_station"), draft("drone_dock"),
+    revised = [draft("drone_scan", target="$zone.field_b"), draft("drone_dock"),
                draft("rover_goto", target="$finding.f1"), draft("report", text="x")]
     c = make_ctrl(llm=scripted(plan_draft(*SHORT_PLAN), plan_draft(*revised, summary="Charging station")))
     c.start_mission("m")
     wait_status(c, "awaiting_approval")
-    c.change("check the charging station instead")
+    c.change("check the field B instead")
     wait_for(lambda: c.store.mission.plan_version == 2 and c.store.status == "awaiting_approval", what="revised plan")
     st = c.store.to_json()
-    assert st["plan"][0]["args"]["target"] == "$zone.charging_station"
-    assert st["previous_plan"][0]["args"]["target"] == "$zone.exit"
-    assert c.planner.llm.calls[1][1].count("charging station instead") >= 1       # the change reached the prompt
+    assert st["plan"][0]["args"]["target"] == "$zone.field_b"
+    assert st["previous_plan"][0]["args"]["target"] == "$zone.field_a"
+    assert c.planner.llm.calls[1][1].count("field B instead") >= 1       # the change reached the prompt
 
 
 def test_reset_only_when_not_running(make_ctrl):
@@ -164,25 +164,25 @@ def test_a_new_mission_can_start_after_stop(make_ctrl):
 
 # ---------------------------------------------------------------- changes while running
 def test_change_while_running_replans_live(make_ctrl):
-    new_tail = [draft("drone_scan", target="$zone.charging_station"), draft("drone_dock"),
-                draft("report", text="checked the charging station")]
+    new_tail = [draft("drone_scan", target="$zone.field_b"), draft("drone_dock"),
+                draft("report", text="checked the field B")]
     llm = scripted(plan_draft(*SHORT_PLAN),
                    decision("continue", "One spot found."),                    # checkpoint after the first scan
-                   decision("replan", "Skipping that, checking the charging station instead.", new_tail))
+                   decision("replan", "Skipping that, checking the field B instead.", new_tail))
     c = make_ctrl(llm=llm, mock_time_scale=100.0)
     c.start_mission("m")
     wait_status(c, "awaiting_approval")
     c.approve(c.store.mission.plan_version)
     wait_for(lambda: c.store.plan[0].status == "running", what="first scan")
-    c.change("skip that, check the charging station instead")
+    c.change("skip that, check the field B instead")
     wait_status(c, "done", "failed", timeout=20)
     st = c.store.to_json()
     assert st["mission"]["status"] == "done", st["mission"]["error"]
     assert st["previous_plan"] is not None and st["mission"]["plan_version"] == 2
     scans = [s for s in st["plan"] if s["action"] == "drone_scan"]
-    assert [s["args"]["target"] for s in scans] == ["$zone.exit", "$zone.charging_station"]
+    assert [s["args"]["target"] for s in scans] == ["$zone.field_a", "$zone.field_b"]
     assert "rover_goto" not in [s["action"] for s in st["plan"]]          # the old tail was dropped, not just reordered
-    assert any("charging station" in m["text"] for m in st["messages"] if m["role"] == "ai")
+    assert any("field B" in m["text"] for m in st["messages"] if m["role"] == "ai")
 
 
 def test_change_needing_approval_pauses_then_continues(make_ctrl):
@@ -269,7 +269,7 @@ def test_replan_budget_ends_in_a_failed_mission_with_a_reason(make_ctrl):
 
 
 def test_a_failed_dock_lands_the_drone_and_the_mission_carries_on(make_ctrl):
-    c = make_ctrl(mock_time_scale=100.0)
+    c = make_ctrl(mock_time_scale=100.0, dock_mode=True)
     c.start_mission("Check the exit")
     wait_status(c, "awaiting_approval")
     c.approve(c.store.mission.plan_version)
@@ -309,10 +309,10 @@ def test_slow_planner_falls_back_to_the_canned_plan(make_ctrl):
 
 
 def test_invalid_llm_plan_is_retried_once_with_the_reasons(make_ctrl):
-    bad = plan_draft(draft("drone_scan", target="$zone.exit"), draft("rover_goto", target="$home"))   # drone still up
+    bad = plan_draft(draft("drone_scan", target="$zone.field_a"), draft("rover_goto", target="$home"))   # drone still up
     good = plan_draft(*SHORT_PLAN, summary="Fixed")
     llm = scripted(bad, good)
-    c = make_ctrl(llm=llm)
+    c = make_ctrl(llm=llm, dock_mode=True)
     c.start_mission("m")
     wait_status(c, "awaiting_approval")
     assert c.store.mission.fallback is False and c.store.mission.reason == "Fixed"

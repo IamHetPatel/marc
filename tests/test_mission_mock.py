@@ -12,7 +12,7 @@ def test_inspect_mission_end_to_end(make_ctrl):
     assert st["mission"]["status"] == "done", st["mission"]["error"]
     assert [s["status"] for s in st["plan"]] == ["done"] * len(st["plan"])
     f = st["findings"][0]
-    assert f["label"] == "cardboard box" and f["confidence"] and f["image_id"]
+    assert f["label"] == "crashed drone" and f["confidence"] and f["image_id"]
     assert c.store.get_image(f["image_id"])[:2] == b"\xff\xd8"           # a real JPEG for the dashboard
     assert st["messages"][-1]["text"] == "Mission complete."
     assert st["robots"]["drone"] is not None
@@ -23,10 +23,10 @@ def test_fetch_mission_brings_the_object_home(make_ctrl):
     st = run_to_end(c, "Find the object near the exit and bring it back to me")
     assert st["mission"]["status"] == "done", st["mission"]["error"]
     assert st["robots"]["rover"]["holding"] is True
-    box = next(o for o in c.world.objects if o["label"] == "cardboard box")
+    box = next(o for o in c.world.objects if o["label"] == "crashed drone")
     home = c.base_ctx.arena.home
     assert math.hypot(box["x"] - home.x, box["y"] - home.y) < 0.6
-    assert c.world.drone["state"] == "docked"
+    assert c.world.drone["state"] == "landed"
 
 
 def test_state_shape_matches_the_dashboard_contract(make_ctrl):
@@ -37,7 +37,7 @@ def test_state_shape_matches_the_dashboard_contract(make_ctrl):
     assert {"id", "text", "status", "plan_version", "fallback"} <= set(st["mission"])
     step = st["plan"][0]
     assert {"id", "robot", "action", "args", "why", "status", "result"} <= set(step)
-    assert step["args"] == {"target": "$zone.exit"}                       # references stay unresolved in /state
+    assert step["args"] == {"target": "$zone.field_a"}                       # references stay unresolved in /state
     assert {"id", "x", "y", "label", "confidence", "image_id"} <= set(st["findings"][0])
     assert {"t", "role", "text"} == set(st["messages"][0])
 
@@ -74,15 +74,15 @@ def test_flaky_robots_still_complete_via_replanning(make_ctrl):
 
 def test_llm_authored_plan_runs_like_the_canned_one(make_ctrl):
     plan = PlanDraft(summary="Scan, check, report", steps=[
-        draft("drone_scan", target="$zone.exit"), draft("drone_dock"),
-        draft("rover_goto", target="$finding.f1"), draft("rover_search", target="cardboard box"),
+        draft("drone_scan", target="$zone.field_a"), draft("drone_land"),
+        draft("rover_goto", target="$finding.f1"), draft("rover_search", target="crashed drone"),
         draft("rover_inspect", question="Is this blocking the exit?"),
-        draft("report", text="A cardboard box is blocking the exit.", finding_id="f1")])
+        draft("report", text="The crashed drone is in field A.", finding_id="f1")])
     c = make_ctrl(llm=scripted(plan, decision("continue", "Box found."), decision("continue", "Confirmed.")))
     st = run_to_end(c, "Check the exit")
     assert st["mission"]["status"] == "done" and st["mission"]["fallback"] is False
     assert st["mission"]["reason"] == "Confirmed."                        # the latest supervisor one-liner
-    assert any(m["text"] == "A cardboard box is blocking the exit." for m in st["messages"])
+    assert any(m["text"] == "The crashed drone is in field A." for m in st["messages"])
 
 
 def test_mission_timeout_fails_cleanly_and_lands_the_drone(make_ctrl):

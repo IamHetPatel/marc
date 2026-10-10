@@ -12,19 +12,19 @@ from .conftest import draft
 
 
 def test_valid_plan_passes():
-    assert validate_drafts([draft("drone_scan", target="$zone.exit"), draft("drone_dock"),
+    assert validate_drafts([draft("drone_scan", target="$zone.field_a"), draft("drone_land"),
                             draft("rover_goto", target="$finding.f1"), draft("report", text="x")]) == []
 
 
 @pytest.mark.parametrize("steps,fragment", [
     ([], "no steps"),
-    ([draft("drone_scan", target="$zone.exit"), draft("rover_goto", target="$home")], "drone is still in the air"),
-    ([draft("drone_scan", target="$zone.exit"), draft("rover_search", target="box")], "drone is still in the air"),
+    ([draft("drone_scan", target="$zone.field_a"), draft("rover_goto", target="$home")], "drone is still in the air"),
+    ([draft("drone_scan", target="$zone.field_a"), draft("rover_search", target="box")], "drone is still in the air"),
     ([draft("rover_grip", mode="squeeze")], "must be one of"),
     ([draft("rover_goto")], "needs target"),
 ])
 def test_invalid_plans_are_described(steps, fragment):
-    problems = validate_drafts(steps)
+    problems = validate_drafts(steps, dock_mode=True)
     assert problems and fragment in " ".join(problems)
 
 
@@ -35,31 +35,44 @@ def test_unknown_action_and_wrong_robot_are_rejected():
     assert "belongs to robot" in validate_drafts([wrong])[0]
 
 
+def test_without_docking_rover_motion_with_the_drone_up_is_a_runtime_matter():
+    steps = [draft("drone_goto", x=1, y=1, z=0.5), draft("rover_goto", target="$home")]
+    assert validate_drafts(steps) == []                    # the separation rule is enforced when the step runs
+    assert validate_drafts(steps, dock_mode=True)
+
+
 def test_landing_makes_rover_motion_legal_again():
     assert validate_drafts([draft("drone_goto", x=1, y=1, z=0.5), draft("drone_land"),
-                            draft("rover_goto", target="$home")]) == []
+                            draft("rover_goto", target="$home")], dock_mode=True) == []
 
 
 def test_validation_respects_a_drone_that_is_already_up():
-    assert validate_drafts([draft("rover_goto", target="$home")], drone_out=True)
-    assert not validate_drafts([draft("drone_dock"), draft("rover_goto", target="$home")], drone_out=True)
+    assert validate_drafts([draft("rover_goto", target="$home")], drone_out=True, dock_mode=True)
+    assert not validate_drafts([draft("drone_dock"), draft("rover_goto", target="$home")], drone_out=True,
+                               dock_mode=True)
 
 
 # ---------------------------------------------------------------- canned plan
 def test_canned_plan_is_always_valid_and_picks_the_zone_from_the_text():
     arena = load_arena()
-    for text in ("Check the exit", "look at the charging station", "scan the left side", "bring me the cup from the right"):
-        plan = demo_plan(text, arena)
-        assert validate_drafts(plan) == [], text
-    assert pick_zone("check the charging station", arena) == "charging_station"
-    assert pick_zone("anything blocking the exit?", arena) == "exit"
-    assert pick_zone("hello", arena) == "exit"
+    for text in ("Check field A", "look at field B", "scan the test zone", "bring me the wreck from field B"):
+        for dock_mode in (False, True):
+            assert validate_drafts(demo_plan(text, arena, dock_mode), dock_mode=dock_mode) == [], (text, dock_mode)
+    assert pick_zone("search field B please", arena) == "field_b"
+    assert pick_zone("a drone crashed in field_a", arena) == "field_a"
+    assert pick_zone("hello", arena) == "field_a"
+
+
+def test_canned_plan_uses_land_without_docking_and_dock_with_it():
+    arena = load_arena()
+    assert "drone_dock" not in [d.action for d in demo_plan("Check field A", arena, dock_mode=False)]
+    assert "drone_dock" in [d.action for d in demo_plan("Check field A", arena, dock_mode=True)]
 
 
 def test_fetch_words_add_the_pickup_sequence():
     arena = load_arena()
-    inspect_only = [d.action for d in demo_plan("Check the exit", arena)]
-    fetch = [d.action for d in demo_plan("Bring me what is at the exit", arena)]
+    inspect_only = [d.action for d in demo_plan("Check field A", arena)]
+    fetch = [d.action for d in demo_plan("Bring me what is in field A", arena)]
     assert "rover_approach" not in inspect_only and "rover_approach" in fetch
     assert wants_fetch("Please remove the box") and not wants_fetch("Check the exit")
 
@@ -75,7 +88,7 @@ def done(action, robot, args=None, result=None, status="done"):
 
 
 def test_rules_stop_when_the_scan_finds_nothing():
-    step = done("drone_scan", "drone", {"target": "$zone.exit"}, {"ok": True, "findings": []})
+    step = done("drone_scan", "drone", {"target": "$zone.field_a"}, {"ok": True, "findings": []})
     d = RuleSupervisor().decide(Trigger("checkpoint", step), sit([step]))
     assert d.decision == "done" and "nothing" in d.reason
 
@@ -103,7 +116,7 @@ def test_rules_never_retry_an_unreachable_robot():
 
 
 def test_rules_ask_a_human_when_the_mentor_gate_blocks():
-    step = done("drone_scan", "drone", {"target": "$zone.exit"}, {"ok": False, "error": "locked", "blocked": "mentor"},
+    step = done("drone_scan", "drone", {"target": "$zone.field_a"}, {"ok": False, "error": "locked", "blocked": "mentor"},
                 "failed")
     assert RuleSupervisor().decide(Trigger("step_failed", step), sit([step])).decision == "ask_human"
 

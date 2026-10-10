@@ -47,6 +47,15 @@ class Config:
     rover_speed_y_sign: float = -1.0     # fleet.py sends -left to /speed (SDK: +y = right)
     rover_drive_y_sign: float = 1.0      # brain.py documents /drive y as left_m
     rover_arm_mode: str = "preset"       # "preset" -> /arm?preset=pick ; "relative" -> /arm?x&y deltas
+    # --- farmland story (docs/mothership-plan.md §1.4, §1.5): no docking, a simulated downward-camera detector
+    dock_mode: bool = False              # DOCK_MODE=1 brings back "drone rides the rover plate" (ai-manager-plan §7)
+    search_z: float = 0.6                # scout height while searching (m)
+    mark_z: float = 1.0                  # scout height while hovering over a marked spot (m)
+    detector_fov_deg: float = 60.0
+    detector_noise_m: float = 0.05
+    detector_miss_p: float = 0.05
+    separation_m: float = 0.5            # a low drone must stay this far (x/y) from where the rover is going
+    scenario: str = ""                   # SCENARIO=<name>: load this scenario at server start
     # --- mock world
     mock_time_scale: float = 1.0         # >1 runs the simulated clock faster than wall time
     mock_fail: dict = field(default_factory=dict)
@@ -65,6 +74,14 @@ class Config:
             plan_timeout_s=_float("PLAN_TIMEOUT_S", cls.plan_timeout_s),
             runs_dir=os.getenv("RUNS_DIR", cls.runs_dir),
             change_needs_approval=_flag("CHANGE_NEEDS_APPROVAL"),
+            dock_mode=_flag("DOCK_MODE"),
+            search_z=_float("SEARCH_Z", cls.search_z),
+            mark_z=_float("MARK_Z", cls.mark_z),
+            detector_fov_deg=_float("DETECTOR_FOV_DEG", cls.detector_fov_deg),
+            detector_noise_m=_float("DETECTOR_NOISE_M", cls.detector_noise_m),
+            detector_miss_p=_float("DETECTOR_MISS_P", cls.detector_miss_p),
+            separation_m=_float("SEPARATION_M", cls.separation_m),
+            scenario=os.getenv("SCENARIO", cls.scenario),
             mission_timeout_s=_float("MISSION_TIMEOUT_S", cls.mission_timeout_s),
             rover_speed_y_sign=_float("ROVER_SPEED_Y_SIGN", cls.rover_speed_y_sign),
             rover_drive_y_sign=_float("ROVER_DRIVE_Y_SIGN", cls.rover_drive_y_sign),

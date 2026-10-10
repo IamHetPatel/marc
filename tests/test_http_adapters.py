@@ -42,7 +42,7 @@ def test_clients_round_trip(stack):
     assert set(ctx.rover.pose()) == {"x", "y", "yaw"}
     assert ctx.rover.snapshot()[:2] == b"\xff\xd8"
     assert ctx.rover.grip("open")["ok"] and ctx.rover.arm("pick")["ok"] and ctx.rover.stop()["ok"]
-    assert ctx.drone.pose()["state"] == "docked" and ctx.rover.rtt_ms is not None
+    assert ctx.drone.pose()["state"] == "landed" and ctx.rover.rtt_ms is not None
 
 
 def test_speed_sign_convention_survives_the_wire(stack):
@@ -101,4 +101,4 @@ def test_full_mission_through_the_http_adapters(stack):
         ctrl.shutdown()
     assert st["mission"]["status"] == "done", st["mission"]["error"]
     assert st["robots"]["rover"].get("holding") is True
-    assert world.drone["state"] == "docked"
+    assert world.drone["state"] == "landed"

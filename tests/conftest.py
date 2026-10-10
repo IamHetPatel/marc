@@ -16,6 +16,22 @@ def cfg(tmp_path):
 
 
 @pytest.fixture
+def dock_cfg(cfg):
+    """DOCK_MODE=1: the old 'drone rides the rover plate' behaviour (ai-manager-plan §7)."""
+    import dataclasses
+    return dataclasses.replace(cfg, dock_mode=True)
+
+
+@pytest.fixture
+def dock_ctx(dock_cfg):
+    c, world = build_ctx(dock_cfg)
+    c.world = world
+    c.store.new_mission("test")
+    c.store.mentor_present = True
+    return c
+
+
+@pytest.fixture
 def ctx(cfg):
     c, world = build_ctx(cfg)
     c.world = world

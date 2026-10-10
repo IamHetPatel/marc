@@ -35,8 +35,8 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     rover = m_rover if mock_rover else RoverHttp(cfg.rover, cfg)
     drone = m_drone if mock_drone else DroneHttp(cfg.drone)
 
-    # a mock drone's "docked" pose says nothing about where a REAL rover is
-    trust_drone_fix = mock_rover or not mock_drone
+    # no docking -> never a drone fix. With docking, a mock drone's "docked" pose says nothing about a REAL rover
+    trust_drone_fix = cfg.dock_mode and (mock_rover or not mock_drone)
     loc = Localization(rover, drone, arena, clock, use_drone_fix=trust_drone_fix)
     perception = make_perception(cfg, arena, llm, world if mock_rover else None)
     safety = Safety(cfg, arena, store, rover, drone)
@@ -54,6 +54,7 @@ def build_controller(cfg: Optional[Config] = None, llm: Optional[LLM] = None, au
     if llm is None and use_env_llm:
         llm = make_llm(cfg, on_latency=lambda ms: store.set_metric("llm_latency_ms_last", ms))
     ctx, world = build_ctx(cfg, store, llm)
-    ctrl = Controller(ctx, Planner(llm, ctx.arena), LLMSupervisor(llm, ctx.arena), auto_approve=auto_approve)
+    ctrl = Controller(ctx, Planner(llm, ctx.arena, cfg.dock_mode),
+                      LLMSupervisor(llm, ctx.arena, dock_mode=cfg.dock_mode), auto_approve=auto_approve)
     ctrl.world = world                      # the MockWorld (or None); tests and demos poke it
     return ctrl

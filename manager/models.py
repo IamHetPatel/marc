@@ -68,6 +68,7 @@ class Camera(BaseModel):
 
 class MockObject(BaseModel):
     label: str
+    kind: str = "unknown"            # own_drone | hostile_drone | decoy | unknown
     x: float
     y: float
     height: float = 0.15

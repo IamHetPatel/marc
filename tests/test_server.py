@@ -100,6 +100,6 @@ def test_cors_is_open_for_the_dashboard(client):
 
 def test_telemetry_monitor_fills_robot_status(client):
     st = poll(client, lambda s: s["robots"]["rover"].get("online") and s["robots"]["drone"].get("online"))
-    assert st["robots"]["rover"]["pose_source"] == "docked_drone"
-    assert st["robots"]["drone"]["state"] == "docked" and st["robots"]["drone"]["battery_v"] > 3.3
+    assert st["robots"]["rover"]["pose_source"] == "start_cross+odometry"           # no docking: no drone fix
+    assert st["robots"]["drone"]["state"] == "landed" and st["robots"]["drone"]["battery_v"] > 3.3
     assert st["metrics"]["rover_rtt_ms"] is not None

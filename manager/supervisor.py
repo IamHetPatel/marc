@@ -10,7 +10,7 @@ from typing import Optional, Protocol
 
 from .llm import LLMError
 from .models import Step, StepDraft, SupervisorDecision
-from .planner import RULES, arena_text, compact_plan, step_to_draft, validate_drafts
+from .planner import arena_text, rules_text, compact_plan, step_to_draft, validate_drafts
 from .tools import vocabulary_text
 
 log = logging.getLogger("manager.supervisor")
@@ -102,8 +102,8 @@ class RuleSupervisor:
 
 
 class LLMSupervisor:
-    def __init__(self, llm, arena, fallback: Optional[Supervisor] = None):
-        self.llm, self.arena = llm, arena
+    def __init__(self, llm, arena, fallback: Optional[Supervisor] = None, dock_mode: bool = False):
+        self.llm, self.arena, self.dock_mode = llm, arena, dock_mode
         self.rules = fallback or RuleSupervisor()
 
     def decide(self, trigger: Trigger, sit: Situation) -> SupervisorDecision:
@@ -117,7 +117,8 @@ class LLMSupervisor:
             except LLMError as e:
                 log.warning("supervisor LLM failed (%s); using rules", e)
                 break
-            problems = validate_drafts(d.remaining_steps, drone_out=sit.drone_out) if d.decision == "replan" else []
+            problems = validate_drafts(d.remaining_steps, drone_out=sit.drone_out, dock_mode=self.dock_mode) \
+                if d.decision == "replan" else []
             if d.decision == "replan" and not d.remaining_steps:
                 problems = ["replan needs remaining_steps"]
             if not problems:
@@ -138,7 +139,7 @@ class LLMSupervisor:
                 "missing_reference": "The next step refers to something that does not exist yet.",
                 "human_change": "The human typed a change while the mission is running. Apply it."}[trigger.kind]
         return "\n\n".join([
-            RULES, arena_text(self.arena),
+            rules_text(self.dock_mode), arena_text(self.arena),
             "ACTIONS\n" + vocabulary_text(),
             f"MISSION\n{sit.mission}",
             f"WHAT HAPPENED\n{what}\nTrigger: {trigger.kind}. Detail: {trigger.detail or '-'}"

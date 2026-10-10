@@ -3,8 +3,8 @@ The dashboard shows "fallback plan" whenever this is in use."""
 from .models import Arena, StepDraft
 
 FETCH_WORDS = ("bring", "fetch", "grab", "pick", "remove", "clear", "move it", "retrieve", "carry", "take")
-ZONE_HINTS = (("charging", "charging_station"), ("left", "left_half"), ("right", "right_half"),
-              ("exit", "exit"), ("test", "test_zone"))
+ZONE_HINTS = (("field b", "field_b"), ("field_b", "field_b"), ("field a", "field_a"), ("field_a", "field_a"),
+              ("test", "test_zone"))
 GENERIC_TARGET = "object on the floor"
 
 
@@ -13,7 +13,7 @@ def pick_zone(text: str, arena: Arena) -> str:
     for word, zone in ZONE_HINTS:
         if word in t and zone in arena.zones:
             return zone
-    return "exit" if "exit" in arena.zones else next(iter(arena.zones), "test_zone")
+    return "field_a" if "field_a" in arena.zones else next(iter(arena.zones), "test_zone")
 
 
 def wants_fetch(text: str) -> bool:
@@ -21,12 +21,14 @@ def wants_fetch(text: str) -> bool:
     return any(w in t for w in FETCH_WORDS)
 
 
-def demo_plan(text: str, arena: Arena) -> list:
+def demo_plan(text: str, arena: Arena, dock_mode: bool = False) -> list:
     zone = pick_zone(text, arena)
     steps = [
         StepDraft(robot="drone", action="drone_scan", target=f"$zone.{zone}",
                   why=f"The drone sweeps the {zone.replace('_', ' ')} from above to find anything on the floor"),
-        StepDraft(robot="drone", action="drone_dock", why="The drone lands back on the rover so the rover can drive"),
+        StepDraft(robot="drone", action="drone_dock", why="The drone lands back on the rover so the rover can drive")
+        if dock_mode else
+        StepDraft(robot="drone", action="drone_land", why="The drone lands so the rover can work safely"),
         StepDraft(robot="rover", action="rover_goto", target="$finding.f1",
                   why="The rover drives to the spot the drone flagged"),
         StepDraft(robot="rover", action="rover_search", target=GENERIC_TARGET,

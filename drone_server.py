@@ -154,6 +154,12 @@ class Scout:
         except Exception as e:                 # noqa: BLE001
             print(f"Arming request failed (continuing): {e}")
 
+    def _disarm(self):
+        try:                                   # Brushless idles its props while armed, even on the floor
+            self.link.scf.cf.supervisor.send_arming_request(False)
+        except Exception as e:                 # noqa: BLE001
+            print(f"Disarm request failed: {e}")
+
     def _takeoff(self, z, gen):
         if self.state == "flying":
             return None
@@ -167,6 +173,7 @@ class Scout:
             return None
         self._arm()
         if self._cur_gen() != gen:             # /land arrived while arming
+            self._disarm()
             return "interrupted by land"
         duration = max(2.0, z / SPEED)
         self.hlc.takeoff(z, duration)
@@ -287,6 +294,7 @@ class Scout:
         def stop_after():
             time.sleep(duration + 0.5)
             self.hlc.stop()
+            self._disarm()
         threading.Thread(target=stop_after, daemon=True).start()
 
     def pose(self):

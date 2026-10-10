@@ -32,6 +32,7 @@ LANE_M = 0.4         # lawnmower lane spacing
 MIN_BATTERY_V = 3.3  # refuse takeoff below this
 POSE_STALE_S = 1.0   # no log packet for this long = pose not trustworthy
 CONNECT_TRIES = 3
+PORT = int(os.getenv("PORT", "8001"))
 
 
 # Measured 2026-10-10 by walking the scout to the cage corners (Lighthouse frame, origin inside the cage):
@@ -77,6 +78,7 @@ class Link:
         self.recording = False
         self.scf = None
         self.error = None
+        self.lighthouse = {}      # deck + base-station bitmaps from the firmware, for /health and error messages
         if not MOCK:
             self._connect(with_zrange)
 
@@ -108,6 +110,44 @@ class Link:
         lg.data_received_cb.add_callback(self._on_log)
         self.scf.cf.log.add_config(lg)
         lg.start()
+        self._watch_lighthouse(LogConfig)
+
+    def _watch_lighthouse(self, LogConfig):
+        """Second, slow log block: why there is (or isn't) a Lighthouse position. Optional: old firmware may lack it."""
+        try:
+            self.lighthouse["deck"] = self.scf.cf.param.get_value("deck.bcLighthouse4") == "1"
+        except Exception:                              # noqa: BLE001
+            self.lighthouse["deck"] = None
+        try:
+            lh = LogConfig(name="lighthouse", period_in_ms=500)
+            lh.add_variable("lighthouse.status", "uint8_t")
+            for var in ("bsReceive", "bsActive", "bsGeoVal", "bsCalVal"):
+                lh.add_variable(f"lighthouse.{var}", "uint16_t")
+            lh.data_received_cb.add_callback(
+                lambda _ts, data, _conf: self.lighthouse.update({k.split(".")[1]: v for k, v in data.items()}))
+            self.scf.cf.log.add_config(lh)
+            lh.start()
+        except Exception as e:                         # noqa: BLE001
+            print(f"Lighthouse status log unavailable: {e}")
+
+    def lighthouse_report(self):
+        """{deck, status, receiving, used, geometry, calibration}: base-station ids per bitmap, plus a hint."""
+        lh = dict(self.lighthouse)
+        ids = lambda mask: [i for i in range(16) if mask is not None and mask >> i & 1]  # noqa: E731
+        out = {"deck": lh.get("deck"), "status": {0: "not receiving", 1: "receiving, no position",
+                                                   2: "estimating position"}.get(lh.get("status"), lh.get("status")),
+               "receiving": ids(lh.get("bsReceive")), "used": ids(lh.get("bsActive")),
+               "geometry": ids(lh.get("bsGeoVal")), "calibration": ids(lh.get("bsCalVal"))}
+        if out["deck"] is False:
+            out["hint"] = "Lighthouse deck not detected: reseat it and power-cycle"
+        elif "bsReceive" in lh and not out["receiving"]:
+            out["hint"] = "no base station seen: are they powered (green LED)? is the deck facing up with a clear view?"
+        elif "bsGeoVal" in lh and not out["geometry"]:
+            out["hint"] = ("drone has no base-station geometry: write calibration.yaml to it "
+                           "(cfclient > Lighthouse > Manage geometry > Load, then Write to Crazyflie)")
+        elif out["receiving"] and not set(out["receiving"]) & set(out["geometry"]):
+            out["hint"] = "the stations it sees have no geometry stored: re-write calibration.yaml"
+        return out
 
     def _on_log(self, _ts, data, _conf):
         self.pose["x"] = data["stateEstimate.x"]
@@ -132,8 +172,9 @@ class Link:
             if age is None or age > POSE_STALE_S:
                 out.update(ok=False, error=f"no pose from {self.uri} for {age}s")
             elif not _sane(self.pose):
-                out.update(ok=False, error="pose is far outside the cage: Lighthouse tracking lost "
-                                           "(check the deck can see the base stations; power-cycle if it stays)")
+                hint = self.lighthouse_report().get("hint", "check the deck can see the base stations; "
+                                                             "power-cycle if it stays")
+                out.update(ok=False, error=f"pose is far outside the cage: Lighthouse tracking lost ({hint})")
         return out
 
 
@@ -380,6 +421,7 @@ def _on_error(e):
 def health():
     return jsonify({"ok": True, "mock": MOCK, "cage": CAGE,
                     "scout": scout.link.snapshot(scout.state).get("error") or "connected",
+                    "scout_lighthouse": None if MOCK else scout.link.lighthouse_report(),
                     "target": ("connected" if target else "none") if not target or MOCK
                     else target.snapshot("landed").get("error") or "connected"})
 
@@ -425,6 +467,6 @@ def dock():
 
 
 if __name__ == "__main__":
-    print(f"Starting Drone Server (MOCK={MOCK}) on port 8001...")
+    print(f"Starting Drone Server (MOCK={MOCK}) on port {PORT}...")
     # threaded=True so /land can cut into a blocking /goto or /scan
-    app.run(host="0.0.0.0", port=8001, threaded=True, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=PORT, threaded=True, debug=False, use_reloader=False)

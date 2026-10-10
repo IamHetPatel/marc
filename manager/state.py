@@ -110,18 +110,20 @@ class Store:
 
     # ------------------------------------------------------------ findings
     def add_findings(self, raw: list, by: str = "drone") -> list[Finding]:
-        """Register scan hits. Strongest dip first so f1 is the best candidate. Returns the new Findings."""
-        added = []
+        """Register scan hits, strongest dip first so f1 is the best candidate. A hit near a known finding
+        is the same object. Returns one Finding per distinct hit, new or already known."""
+        out = []
         with self.lock:
             for r in sorted(raw, key=lambda r: -(r.get("dz") or 0)):
-                if any(distance(r["x"], r["y"], f.x, f.y) < DEDUPE_M for f in self.findings):
-                    continue
-                self._finding_counter += 1
-                f = Finding(id=f"f{self._finding_counter}", x=r["x"], y=r["y"], dz=r.get("dz"),
-                            by=r.get("by", by))
-                self.findings.append(f)
-                added.append(f)
-        return added
+                known = next((f for f in self.findings if distance(r["x"], r["y"], f.x, f.y) < DEDUPE_M), None)
+                if known is None:
+                    self._finding_counter += 1
+                    known = Finding(id=f"f{self._finding_counter}", x=r["x"], y=r["y"], dz=r.get("dz"),
+                                    by=r.get("by", by))
+                    self.findings.append(known)
+                if known not in out:
+                    out.append(known)
+        return out
 
     def get_finding(self, finding_id: str) -> Optional[Finding]:
         with self.lock:

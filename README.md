@@ -166,7 +166,7 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 
 ### AI manager ✅ (mocks) / 🟡 (real robots)
 
-Full design, the `/state` contract for the dashboard, and the API asks to the rover and drone squads: **[docs/ai-manager-plan.md](docs/ai-manager-plan.md)**. That file is the source of truth for anything on `:8002`.
+**Current scope and work packages (drone-recovery demo, robot server contracts, dashboard): [docs/mothership-plan.md](docs/mothership-plan.md).** Read it first. Design rationale and the `/state` contract: [docs/ai-manager-plan.md](docs/ai-manager-plan.md).
 
 #### AI manager quick start
 

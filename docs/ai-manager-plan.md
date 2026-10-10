@@ -1,5 +1,7 @@
 # AI Manager (`manager/`): implementation plan
 
+> **Scope update (Sat afternoon):** the demo is now drone recovery from farmland, with no docking and the dashboard served by the mothership. The work packages and contracts agents should build against are in **[mothership-plan.md](mothership-plan.md)**, which wins where the two disagree. This file remains the design rationale (plan → approve → execute, safety in code, threading rules in §17).
+
 **Owner:** AI manager squad (Het + 1) · **Branch:** `feat/ai-manager` · **Port:** 8002
 **Deadlines (from the Team Plan):** full mission on fake robots **Sat 15:00** · on real robots **Sun 11:00** · feature freeze **Sun 13:30**
 

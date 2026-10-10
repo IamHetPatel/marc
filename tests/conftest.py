@@ -9,6 +9,12 @@ from manager.runtime import build_controller, build_ctx
 from manager.tools import REGISTRY
 
 
+@pytest.fixture(autouse=True)
+def _test_arena(monkeypatch):
+    """Tests are written against the mock arena.json; an ARENA left in the shell (the floor file) must not leak in."""
+    monkeypatch.delenv("ARENA", raising=False)
+
+
 @pytest.fixture
 def cfg(tmp_path):
     """Mock world at 5000x speed: a whole mission takes well under a second of wall time."""

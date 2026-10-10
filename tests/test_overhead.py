@@ -120,6 +120,18 @@ def test_parallax_of_the_raised_tag_is_corrected():
     assert math.dist((naive.rover["x"], naive.rover["y"]), pose[:2]) > 0.15
 
 
+def test_an_angled_camera_corrects_parallax_towards_the_floor_point_below_it():
+    """Railing camera beside the net: the raised tag is pushed away from the lens's floor point, not the image centre."""
+    pose = (3.4, 2.5, 0.0)
+    cam = make_cam(FakeWorld(rover=pose), camera_floor_xy=[2.0, -1.5], camera_height_m=4.0)
+    tick(cam)
+    assert math.dist((cam.rover["x"], cam.rover["y"]), pose[:2]) < 0.02
+    centred = make_cam(FakeWorld(rover=pose), camera_floor_xy=[2.0, -1.5], camera_height_m=4.0)
+    centred.cfg = centred.cfg.model_copy(update={"camera_floor_xy": None})    # same picture, straight-down assumption
+    tick(centred)
+    assert math.dist((centred.rover["x"], centred.rover["y"]), pose[:2]) > 0.1
+
+
 def test_tag_mounting_offset_and_rotation_are_applied():
     pose = (2.0, 1.5, 60.0)
     cam = make_cam(FakeWorld(rover=pose), rover_tag_offset_m=[-0.08, 0.05], rover_tag_yaw_offset_deg=90.0)

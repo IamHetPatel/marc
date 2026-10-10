@@ -1,0 +1,31 @@
+{
+  "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. MEASURED: the net corners and the drone cage (drone squad, 2026-10-10, scout walked to the corners: (2.06,-0.71), (1.96,1.18), (-1.35,1.48); the 4th corner lost tracking, about (-1.25,-0.41) by symmetry). The drone cage is drone_server.py's DEFAULT_CAGE. PROVISIONAL until F1: bounds (net minus 0.1 m, widened to contain the drone cage), zones, home, overhead tags and camera position. Move them on the floor with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
+  "calibrated": false,
+  "bounds": {"x0": -1.15, "y0": -0.41, "x1": 1.86, "y1": 1.08},
+  "drone_cage": {"x0": -1.05, "y0": -0.41, "x1": 1.66, "y1": 0.88, "z_max": 1.2},
+  "home": {"x": -0.8, "y": 0.75, "yaw": 0.0},
+  "plate_offset": {"x": 0.0, "y": 0.0, "yaw": 0.0, "dock_z": 0.27},
+  "zones": {
+    "base":      {"rect": [-1.15, 0.4, -0.45, 1.08]},
+    "disposal":  {"rect": [-1.15, -0.41, -0.45, 0.3]},
+    "field_a":   {"rect": [-0.35, -0.41, 0.65, 0.88]},
+    "field_b":   {"rect": [0.65, -0.41, 1.66, 0.88]},
+    "test_zone": {"rect": [-1.05, -0.41, 1.66, 0.88]}
+  },
+  "camera": {"width": 640, "height": 360, "fov_deg": 70.0, "grip_line_row": 300, "deadband_px": 40},
+  "overhead": {
+    "_note": "PLACEHOLDER. Railing camera above one edge of the net, looking down at an angle. ArUco tags 0-3 (DICT_4X4_50) flat on the floor just outside the net corners; enter their measured centres. camera_floor_xy = the floor point straight below the lens (it may be outside the net), camera_height_m = lens height above the floor.",
+    "dictionary": "DICT_4X4_50",
+    "camera_height_m": 4.0,
+    "camera_floor_xy": [0.3, -1.6],
+    "floor_tags": {"0": [-1.4, -0.75], "1": [2.15, -0.75], "2": [2.05, 1.55], "3": [-1.45, 1.55]},
+    "rover_tag_id": 10,
+    "rover_tag_height_m": 0.3,
+    "rover_tag_offset_m": [0.0, 0.0],
+    "rover_tag_yaw_offset_deg": 0.0,
+    "max_age_s": 0.5
+  },
+  "mock_objects": [
+    {"label": "crashed drone", "kind": "hostile_drone", "x": 0.2, "y": 0.3, "height": 0.05, "grippable": true, "color": "#c0392b"}
+  ]
+}

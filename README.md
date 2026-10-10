@@ -176,7 +176,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 
 # the mothership: server + dashboard on :8002, fake robots, no API key needed
 ROVER=mock DRONE=mock MOCK_TIME_SCALE=10 .venv/bin/python -m manager.server
-open http://localhost:8002/                                  # the dashboard (map, plan, camera, manual control)
+open http://localhost:8002/                                  # the dashboard (light / dark toggle in the bar; press / to type a mission)
 
 # a whole mission in the terminal instead
 MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli --scenario t3_recover_hostile --auto-approve --mentor

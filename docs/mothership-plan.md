@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | **M1** farmland config, `DOCK_MODE`, mock world | ✅ | `config.py`, `arena.json`, `adapters/mock.py` |
 | **M2** `drone_takeoff`, `drone_mark`, separation rule, target pose | ✅ | `tools.py`, `controller.Monitor` |
-| **M3** dashboard at `/ui/` | ✅ (verified in headless Chromium) | `manager/static/` |
+| **M3** dashboard at `/ui/` | ✅ redesigned as a field-operations console, light and dark; verified in headless Chromium | `manager/static/` |
 | **M4** `POST /manual`, `GET /arena` | ✅ | `controller.manual`, `server.py` |
 | **M5** `POST /plan`, scenarios | ✅ | `scenarios.py`, `scenarios/*.yaml` |
 | **M6** triage, authorization gate, disposal, report | ✅ | `tools.py` (`_authorization_gate`), `GET /report` |
@@ -23,6 +23,8 @@
 | R1, D1, F1 | not ours / not started | |
 
 ~300 tests on mocks (`pytest`), plus opt-in `pytest -m ui` (real browser) and `pytest -m live` (real Gemini). Nothing here has touched a real robot or the real Gemini API.
+
+**Dashboard design (M3), for whoever touches it next:** an app shell that does not scroll as a page at laptop size (map beside a slim camera and robot-status column; operator panel on the right; a collapsible drawer with log, findings, manual control and scenarios). Whatever needs a human (approve, the authorization question, the result) is the first card in the operator panel, and first of all on a phone. Warm graphite and "survey paper" themes (toggle in the bar, remembered, follows the system by default), IBM Plex bundled in `static/fonts/` so it works offline. The three robot colours were validated for colour-blind safety on both surfaces (all-pairs, worst ΔE 17 against a target of 8) and a test pins them; status colours always come with an icon and a word. The DOM is updated in place, so robot markers glide between the 500 ms polls and plan steps animate their state; `prefers-reduced-motion` turns the motion off. Opt-in `pytest -m ui` drives all of it in a real browser.
 
 **Where the build differs from this spec (and why):**
 

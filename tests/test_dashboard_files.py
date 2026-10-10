@@ -54,7 +54,8 @@ def test_every_element_the_script_looks_up_exists_in_the_page():
     wanted = set(re.findall(r'\$\("([A-Za-z0-9_-]+)"\)', JS)) | {i for pair in re.findall(r'\["([a-z]-[xyz])", "([a-z]-[xyz])"\]', JS) for i in pair}
     wanted |= set(re.findall(r'"(light-[a-z]+)"', JS)) | {f"light-{n}" for n in ("rover", "drone", "target")}
     have = set(re.findall(r'id="([A-Za-z0-9_-]+)"', HTML))
-    assert not (wanted - have - {"map-dynamic", "map-static"}), sorted(wanted - have)      # those two are made by the script
+    made_by_the_script = {"map-dynamic", "map-static", "plan-skeleton", "crosshair", "xh-v", "xh-h"}
+    assert not (wanted - have - made_by_the_script), sorted(wanted - have)
 
 
 def test_every_manual_button_is_a_valid_manual_request():
@@ -80,3 +81,50 @@ def test_the_manual_form_buttons_send_valid_requests():
 def test_app_js_is_syntactically_valid():
     r = subprocess.run(["node", "--check", str(Path(STATIC_DIR) / "app.js")], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+CSS = (STATIC_DIR / "style.css").read_text()
+
+
+def test_fonts_are_bundled_and_every_url_in_the_stylesheet_exists():
+    urls = re.findall(r'url\("([^"#]+)"\)', CSS)
+    assert len(urls) >= 5 and all(u.startswith("fonts/") for u in urls)         # nothing is fetched from the internet
+    for u in urls:
+        assert (STATIC_DIR / u).is_file(), u
+    assert (STATIC_DIR / "fonts" / "OFL.txt").is_file()                          # the font licence travels with the fonts
+
+
+def _tokens(block: str) -> set:
+    return set(re.findall(r"(--[a-z0-9-]+)\s*:", block))
+
+
+def test_dark_and_light_themes_define_the_same_colour_tokens():
+    dark = re.search(r":root, :root\[data-theme=\"dark\"\] \{(.*?)\n\}", CSS, re.S).group(1)
+    light = re.search(r':root\[data-theme="light"\] \{(.*?)\n\}', CSS, re.S).group(1)
+    assert _tokens(dark) == _tokens(light) and len(_tokens(dark)) > 25, _tokens(dark) ^ _tokens(light)
+
+
+def test_the_robot_colours_are_the_ones_that_passed_the_colour_blindness_validator():
+    """scout / rover / target were chosen with the dataviz validator (all-pairs, both surfaces: worst CVD delta-E 17
+    against a target of 8). Changing them silently would void that; re-run the validator and update both places."""
+    dark = re.search(r":root, :root\[data-theme=\"dark\"\] \{(.*?)\n\}", CSS, re.S).group(1)
+    light = re.search(r':root\[data-theme="light"\] \{(.*?)\n\}', CSS, re.S).group(1)
+    assert "--scout: #3194f2" in dark and "--rover: #d06d15" in dark and "--target: #bd3381" in dark
+    assert "--scout: #1f7bcf" in light and "--rover: #b96115" in light and "--target: #932162" in light
+
+
+def test_motion_respects_reduced_motion_and_keyboard_focus_is_visible():
+    assert "prefers-reduced-motion: reduce" in CSS and ":focus-visible" in CSS
+
+
+def test_the_theme_is_chosen_before_first_paint():
+    head = HTML.split("</head>")[0]
+    assert 'data-theme="dark"' in HTML and "fp-theme" in head and "prefers-color-scheme" in head
+
+
+def test_every_icon_the_page_uses_is_in_the_sprite():
+    sprite = set(re.findall(r'<symbol id="i-([a-z-]+)"', HTML))
+    literal = set(re.findall(r'<use href="#i-([a-z-]+)"', HTML)) | set(re.findall(r'icon\("([a-z-]+)"', JS)) \
+        | set(re.findall(r'"#i-([a-z-]+)"', JS)) | set(re.findall(r'ic: "([a-z-]+)"', JS))
+    chosen_at_run_time = {"check", "x", "minus", "alert", "play", "info", "target", "stop"}   # step nodes, result chips, badges
+    assert not ((literal | chosen_at_run_time) - sprite), (literal | chosen_at_run_time) - sprite

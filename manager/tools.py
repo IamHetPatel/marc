@@ -420,6 +420,20 @@ def drone_land(ctx: Ctx, args: dict) -> dict:
     return res
 
 
+@action("drone", ok_key="docked")
+def drone_home(ctx: Ctx, args: dict) -> dict:
+    """Fly the scout back to its launch pad (where it first took off) at a safe height and land it there.
+    Use this to get the scout out of the rover's way after marking a spot, and at the end of a mission,
+    instead of drone_land, which would land it on the spot it is hovering over. Returns: {docked, pose}."""
+    if ctx.drone.pose().get("state") != "flying" and (msg := ctx.safety.mentor_gate()):
+        return _err(msg, blocked="mentor")                      # landed elsewhere: getting home means taking off
+    res = _norm(ctx.drone.dock())
+    if res["ok"] and res.get("docked", True):
+        ctx.drone_out = False
+        res["docked"] = True
+    return res
+
+
 @action("manager", needs=(("target",),), choices={"mode": ("first", "all")}, checkpoint=True, fault="locate")
 def camera_locate(ctx: Ctx, args: dict) -> dict:
     """Find an object on the floor with the fixed overhead camera (a webcam on the ceiling that sees the whole
@@ -509,6 +523,11 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         if err <= GOTO_TOLERANCE_M:
             ctx.rover.stop()
             return {"ok": True, "arrived": True, **info}
+        if not ctx.arena.view_rect().contains(pose.x, pose.y, margin=0.1):
+            ctx.rover.stop()                     # a wrong anchor makes the rover chase a goal it can never reach
+            return _err("the rover's position left the mapped area; its position is probably wrong. Re-anchor it "
+                        "(Manual control: anchor from a Crazyflie, or the start cross) and try again",
+                        arrived=False, **info)
         if ctx.clock.now() > t_end:
             ctx.rover.stop()
             return _err("timed out before arriving", arrived=False, **info)

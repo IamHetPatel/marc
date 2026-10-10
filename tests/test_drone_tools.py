@@ -69,7 +69,7 @@ def hover(ctx, x, y, z):
 
 
 def test_a_low_drone_over_the_rovers_goal_blocks_the_goto(ctx):
-    hover(ctx, 2.0, 1.0, 0.6)
+    hover(ctx, 2.0, 1.0, 0.2)
     r = go(ctx, "rover_goto", x=2.1, y=1.0)
     assert r["ok"] is False and r["blocked"] == "separation" and "drone_mark" in r["error"]
     assert ctx.world.rover[:2] == [ctx.arena.home.x, ctx.arena.home.y]          # nothing moved
@@ -81,15 +81,16 @@ def test_the_same_goal_is_fine_once_the_drone_is_at_mark_height(ctx):
 
 
 def test_a_low_drone_far_from_the_goal_does_not_block(ctx):
-    hover(ctx, 3.2, 2.4, 0.6)
+    hover(ctx, 3.2, 2.4, 0.2)
     assert go(ctx, "rover_goto", x=0.8, y=0.8)["arrived"]
 
 
 def test_a_low_drone_hovering_next_to_the_rover_blocks_turning_in_place(ctx):
-    assert go(ctx, "drone_takeoff")["ok"]                  # the pad is 0.3 m from the rover, z = search height
+    hm = ctx.arena.home
+    hover(ctx, hm.x + 0.3, hm.y, 0.2)                      # low, right over the pad 0.3 m from the rover
     r = go(ctx, "rover_search", target="crashed drone")
     assert r["ok"] is False and r["blocked"] == "separation"
-    go(ctx, "drone_goto", x=3.0, y=2.0, z=0.6)             # fly away: now the rover may turn
+    go(ctx, "drone_goto", x=3.0, y=2.0, z=0.2)             # fly away: now the rover may turn
     assert "blocked" not in go(ctx, "rover_search", target="crashed drone")
 
 

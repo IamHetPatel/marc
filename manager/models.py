@@ -107,9 +107,20 @@ class Arena(BaseModel):
     camera: Camera = Camera()
     overhead: Overhead = Overhead()
     mock_objects: list = Field(default_factory=list)
+    launch_pad: Optional[Pose] = None               # where the scout takes off and returns to (may be outside bounds)
+    view: Optional[Rect] = None                     # what the dashboard map shows: the whole net and the pad
 
     def zone(self, name: str) -> Optional[Rect]:
         return self.zones.get(name)
+
+    def view_rect(self) -> Rect:
+        """`view` if given, else the smallest rectangle around bounds, cage, home and launch pad."""
+        pts = [(r.x0, r.y0) for r in (self.bounds, self.drone_cage)] + [(r.x1, r.y1) for r in (self.bounds, self.drone_cage)]
+        pts += [(p.x, p.y) for p in (self.home, self.launch_pad) if p is not None]
+        if self.view is not None:
+            pts += [(self.view.x0, self.view.y0), (self.view.x1, self.view.y1)]
+        return Rect(x0=min(p[0] for p in pts), y0=min(p[1] for p in pts),
+                    x1=max(p[0] for p in pts), y1=max(p[1] for p in pts))
 
 
 def load_arena(path: Optional[str] = None) -> Arena:
@@ -130,6 +141,8 @@ def load_arena(path: Optional[str] = None) -> Arena:
         camera=Camera(**raw.get("camera", {})),
         overhead=Overhead(**{k: v for k, v in raw.get("overhead", {}).items() if not k.startswith("_")}),
         mock_objects=[MockObject(**o) for o in raw.get("mock_objects", [])],
+        launch_pad=Pose(**raw["launch_pad"]) if raw.get("launch_pad") else None,
+        view=Rect(**raw["view"]) if raw.get("view") else None,
     )
 
 

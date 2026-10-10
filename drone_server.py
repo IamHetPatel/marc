@@ -388,7 +388,7 @@ class Scout:
         threading.Thread(target=stop_after, daemon=True).start()
 
     def pose(self):
-        return self.link.snapshot(self.state)
+        return {**self.link.snapshot(self.state), "home": self.takeoff_pos}    # home: where /dock returns to
 
 
 def _zrange_findings(samples, by):
@@ -452,7 +452,7 @@ def health():
 
 @app.route("/pose")
 def pose():
-    """?cf=scout|target. {ok, x, y, z, yaw, battery_v, state}."""
+    """?cf=scout|target. {ok, x, y, z, yaw, battery_v, state}; the scout adds home (its pad, null before takeoff)."""
     if request.args.get("cf", "scout") == "target":
         if target is None:
             return jsonify({"ok": False, "error": "no target drone"})

@@ -38,7 +38,7 @@ def demo_plan(text: str, arena: Arena, dock_mode: bool = False) -> list:
     steps.append(StepDraft(robot="rover", action="rover_goto", target="$finding.f1",
                            why="The rover drives to the spot (and stops 0.6 m short)"))
     if not dock_mode:
-        steps.append(StepDraft(robot="drone", action="drone_land", why="The scout lands so the rover can work safely"))
+        steps.append(StepDraft(robot="drone", action="drone_home", why="The scout flies back to its launch pad and lands, out of the rover's way"))
     steps += [
         StepDraft(robot="rover", action="rover_search", target=GENERIC_TARGET,
                   why="The rover turns until its camera sees it"),

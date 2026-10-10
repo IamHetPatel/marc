@@ -1,5 +1,4 @@
 # Tier T2: the scout marks the crash site, the rover drives to it and takes a photo. No AI involved.
-# Caveat for the floor: drone_land lands the scout where it hovers, i.e. at the marked spot beside the wreck.
 # If that is a problem, add a drone_goto back to the launch pad before it.
 name: t2_mark_and_drive
 title: "Scout marks the crash site, rover drives there"
@@ -9,6 +8,6 @@ targets:
 plan:
   - {robot: drone, action: drone_mark, target: "2.4,1.1", why: "Scout marks the crash site"}
   - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to the marked spot (stops 0.6 m short)"}
-  - {robot: drone, action: drone_land, why: "Scout lands so the rover can work"}
+  - {robot: drone, action: drone_home, why: "Scout flies back to its launch pad and lands, out of the rover's way"}
   - {robot: rover, action: rover_inspect, question: "What is in front of the robot?", why: "Camera checks the object"}
   - {robot: manager, action: report, text: "Crash site reached and photographed.", why: "Tell the operator"}

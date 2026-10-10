@@ -1,0 +1,23 @@
+# Backup plan: no scout flight. The fixed overhead webcam finds the crashed drone, the rover fetches it.
+# Needs OVERHEAD_CAM (a webcam index, or "mock" with the mock robots). Floor tags must be in view (calibrated).
+name: overhead_fetch
+title: "Overhead camera finds it, rover fetches it"
+mission: "A hostile drone crashed in the field. Find it with the overhead camera and move it to the disposal zone if it is safe to handle."
+targets:
+  - {id: t1, kind: hostile_drone, source: fixed, x: 2.4, y: 1.1}
+plan:
+  - {robot: manager, action: camera_locate, target: "crashed drone", why: "The ceiling camera finds the crashed drone"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to it (stops 0.6 m short)"}
+  - {robot: rover, action: rover_search, target: "crashed drone", why: "Rover turns until its camera sees it"}
+  - {robot: rover, action: rover_inspect, question: "What is in front of the robot? Is it a drone, and is it ours or hostile?", why: "Camera triages the object"}
+  - {robot: manager, action: request_authorization, finding_id: f1, why: "A human must approve before the rover touches anything hazardous"}
+  - {robot: rover, action: rover_arm, mode: pick, why: "Lower the arm"}
+  - {robot: rover, action: rover_grip, mode: open, why: "Open the gripper"}
+  - {robot: rover, action: rover_approach, target: "crashed drone", why: "Creep forward on the camera until it is in the gripper"}
+  - {robot: rover, action: rover_grip, mode: close, why: "Close the gripper on it"}
+  - {robot: rover, action: rover_arm, mode: carry, why: "Lift it"}
+  - {robot: rover, action: rover_check_grip, why: "Camera checks that it is held"}
+  - {robot: rover, action: rover_goto, target: "$zone.disposal", why: "Carry it to the disposal zone"}
+  - {robot: rover, action: rover_grip, mode: open, why: "Release it"}
+  - {robot: rover, action: rover_arm, mode: home, why: "Stow the arm"}
+  - {robot: manager, action: report, text: "Hostile drone found from above and delivered to the disposal zone.", why: "Tell the operator"}

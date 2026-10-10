@@ -142,8 +142,9 @@ class RuleSupervisor:
 
 
 class LLMSupervisor:
-    def __init__(self, llm, arena, fallback: Optional[Supervisor] = None, dock_mode: bool = False):
-        self.llm, self.arena, self.dock_mode = llm, arena, dock_mode
+    def __init__(self, llm, arena, fallback: Optional[Supervisor] = None, dock_mode: bool = False,
+                 overhead: bool = False):
+        self.llm, self.arena, self.dock_mode, self.overhead = llm, arena, dock_mode, overhead
         self.rules = fallback or RuleSupervisor()
 
     def decide(self, trigger: Trigger, sit: Situation) -> SupervisorDecision:
@@ -179,7 +180,7 @@ class LLMSupervisor:
                 "missing_reference": "The next step refers to something that does not exist yet.",
                 "human_change": "The human typed a change while the mission is running. Apply it."}[trigger.kind]
         return "\n\n".join([
-            rules_text(self.dock_mode), arena_text(self.arena),
+            rules_text(self.dock_mode, self.overhead), arena_text(self.arena),
             "ACTIONS\n" + vocabulary_text(),
             f"MISSION\n{sit.mission}",
             f"WHAT HAPPENED\n{what}\nTrigger: {trigger.kind}. Detail: {trigger.detail or '-'}"

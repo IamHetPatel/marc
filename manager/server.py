@@ -4,6 +4,7 @@
     POST /mentor {"present"} POST /reset                      GET /state              GET /images/{id}.jpg
     POST /manual {"robot","action","args"}   POST /plan {"title","steps"}   GET /scenarios   POST /scenarios/{name}/load
     GET /arena   GET /report                 GET /ui/ (the dashboard)       GET / -> /ui/
+    GET /overhead.jpg (latest overhead webcam frame, annotated; 404 without OVERHEAD_CAM)
 
 Run:  ROVER=mock DRONE=mock uvicorn manager.server:app --port 8002
 """
@@ -165,6 +166,14 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         if data is None:
             raise HTTPException(status_code=404, detail="no such image")
         return Response(content=data, media_type="image/jpeg")
+
+    @app.get("/overhead.jpg")
+    def overhead():
+        cam = ctrl().base_ctx.overhead
+        data = cam.preview_jpeg() if cam is not None else None
+        if data is None:
+            raise HTTPException(status_code=404, detail="no overhead camera frame")
+        return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
     app.mount("/ui", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
     return app

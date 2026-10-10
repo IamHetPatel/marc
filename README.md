@@ -190,6 +190,28 @@ ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv
 
 Three ways to get a plan, all through the same validation and safety (the AI is optional): type a mission (`POST /mission`, Gemini or the built-in plan), load a **scenario** from [scenarios/](scenarios/) (`POST /scenarios/{name}/load`, no AI), or run one action by hand (`POST /manual`, between missions). The gripper will not close on a hazardous finding until the operator answers *yes* to the authorization question; that gate is in code and applies to every plan source.
 
+#### Backup: overhead 4K webcam as the "drone camera"
+
+If the scout cannot fly (or as its eyes when it does), a webcam on the ceiling looking straight down finds the object, and the rover fetches it. Code: [manager/overhead.py](manager/overhead.py).
+
+- **Calibration:** 4+ ArUco tags (`DICT_4X4_50`, ids 0-3) taped flat on the floor **just outside the drivable area**, their centres measured in the Lighthouse frame and entered in `arena.json` → `overhead.floor_tags`. The pixel→metre homography is re-fitted on every frame (a bumped camera heals itself; a hidden tag keeps the last fit).
+- **Rover pose:** tag 10 on the EP's top plate, its top edge towards the rover's front. Its height (`rover_tag_height_m`) and `camera_height_m` correct the parallax. A fresh sighting becomes the rover's position fix (`pose_source: overhead_camera`), and wheel odometry fills the gaps. This removes the start-cross drift.
+- **Finding things:** Gemini points at the object in the frame, and the point goes through the homography. New action `camera_locate` (no robot moves). With the camera installed, `drone_search` also uses it as the scout's detector instead of the simulated one.
+- **Dashboard:** an "Overhead" card shows the live annotated frame. If the yellow arena outline is crooked, the tag positions are wrong.
+
+```bash
+.venv/bin/python -m manager.overhead tags overhead_tags/          # print these (same size, flat, matte)
+.venv/bin/python -m manager.overhead check 0 --save check.jpg     # tags seen, reprojection error, rover pose
+OVERHEAD_CAM=0 ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv/bin/python -m manager.server
+# then load the scenario "overhead_fetch" (no scout flight), or type a mission that mentions the overhead camera
+
+# no hardware: a synthetic top-down render of the mock world, with real tags and the real pipeline
+ROVER=mock DRONE=mock OVERHEAD_CAM=mock MOCK_TIME_SCALE=10 SCENARIO=overhead_fetch .venv/bin/python -m manager.server
+```
+
+Env vars: `OVERHEAD_CAM` (`0`, `/dev/video0`, a stream URL, a `.jpg`, or `mock`), `OVERHEAD_WIDTH` / `OVERHEAD_HEIGHT` (default 3840×2160, captured as MJPG), `OVERHEAD_TARGET` (what `drone_search` looks for, default "crashed drone"), `DETECTOR=auto|sim|overhead`.
+⚠️ For the floor: measure the tag centres and the camera height; check that the rover heading matches (set `rover_tag_yaw_offset_deg` if the tag was stuck on rotated). Gemini overhead pointing is untested against the real model. The mock overhead does not feed the mock rover's localization, because the mock view runs on wall-clock time and the mock rover on the scaled clock.
+
 Env vars: `ROVER` / `DRONE` (`mock` or a URL), `DOCK_MODE=1` (old "drone rides the rover" mode), `SCENARIO=<name>` (load at start), `MOCK_TIME_SCALE` (simulated clock speed-up), `MOCK_FAIL=goto:0.2,grip:0.3` (failure injection), `CHANGE_NEEDS_APPROVAL=1`, `PERCEPTION=mock|gemini`, `SEARCH_Z` / `MARK_Z` / `SEPARATION_M` / `DETECTOR_*`, `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` / `ROVER_ARM_MODE`. Opt-in test layers: `pytest -m live` (real Gemini) and `pytest -m ui` (the dashboard in headless Chromium; `requirements-ui-tests.txt`).
 
 ---

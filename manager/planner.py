@@ -36,12 +36,20 @@ DOCK_RULE = (
     "rover_approach. Skip drone_mark in that case.")
 
 
-def rules_text(dock_mode: bool) -> str:
-    """The rules block shared by the planner and supervisor prompts. The docking rule only exists in DOCK_MODE."""
+OVERHEAD_RULE = (
+    'An overhead camera on the ceiling sees the whole field. If the scout is offline, or the mission asks for the '
+    'overhead camera, use camera_locate instead of drone_search and drone_mark (then rover_goto "$finding.f1" and '
+    "continue as usual, without drone_land).")
+
+
+def rules_text(dock_mode: bool, overhead: bool = False) -> str:
+    """The rules block shared by the planner and supervisor prompts. The docking rule only exists in DOCK_MODE,
+    the overhead-camera rule only when the camera is installed."""
     rules = [
         "The scout searches and marks; the rover inspects, picks up and carries. Never send the rover to search a "
         "whole field.",
         *([DOCK_RULE] if dock_mode else []),
+        *([OVERHEAD_RULE] if overhead else []),
         'A recovery goes in this order: drone_search the field named in the mission, drone_mark "$finding.f1", '
         'rover_goto "$finding.f1", drone_land, rover_search for the object, rover_inspect. If the mission only asks '
         "to look, check or find, stop there and report.",
@@ -108,8 +116,8 @@ def compact_plan(steps: list) -> str:
 
 
 class Planner:
-    def __init__(self, llm, arena: Arena, dock_mode: bool = False):
-        self.llm, self.arena, self.dock_mode = llm, arena, dock_mode
+    def __init__(self, llm, arena: Arena, dock_mode: bool = False, overhead: bool = False):
+        self.llm, self.arena, self.dock_mode, self.overhead = llm, arena, dock_mode, overhead
 
     def fallback(self, text: str) -> PlanResult:
         return PlanResult(demo_plan(text, self.arena, self.dock_mode), True,
@@ -134,7 +142,7 @@ class Planner:
         return self.fallback(text)
 
     def _prompt(self, text, previous, change, robots) -> str:
-        parts = [rules_text(self.dock_mode), arena_text(self.arena), "ROBOT STATUS\n" + json.dumps(robots or {}),
+        parts = [rules_text(self.dock_mode, self.overhead), arena_text(self.arena), "ROBOT STATUS\n" + json.dumps(robots or {}),
                  "ACTIONS\n" + vocabulary_text(),
                  'Reply with JSON {"summary": <one sentence>, "steps": [...]}. Each step: robot, action, why, '
                  "and only the argument fields that action documents.",

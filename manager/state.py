@@ -142,7 +142,7 @@ class Store:
                 if known is None:
                     self._finding_counter += 1
                     known = Finding(id=f"f{self._finding_counter}", x=r["x"], y=r["y"], dz=r.get("dz"),
-                                    by=r.get("by", by))
+                                    by=r.get("by", by), label=r.get("label"))
                     self.findings.append(known)
                 if known not in out:
                     out.append(known)

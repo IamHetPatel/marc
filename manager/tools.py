@@ -90,7 +90,8 @@ class Ctx:
     cancel: threading.Event = field(default_factory=threading.Event)
     ask: Optional[Callable[[str], Optional[str]]] = None    # controller's ask_human hook
     drone_out: bool = False
-    detector: object = None                                 # SimDetector (the scout's simulated camera)
+    detector: object = None                                 # SimDetector, or OverheadDetector with the webcam
+    overhead: object = None                                 # OverheadCamera (manager/overhead.py), if installed
 
     def cancelled(self) -> bool:
         return self.cancel.is_set()
@@ -372,7 +373,8 @@ def drone_search(ctx: Ctx, args: dict) -> dict:
             (f,) = ctx.store.add_findings([{"x": h["x"], "y": h["y"], "by": "scout"}])
             if f not in found:
                 found.append(f)
-            ctx.store.set_metric("detection_error_m", h["error_m"])
+            if h.get("error_m") is not None:                    # unknown for a real camera
+                ctx.store.set_metric("detection_error_m", h["error_m"])
         if hits and args.get("mode") != "all":
             break
     ctx.store.say("ai", f"Scout search flew {flown} waypoints and found {len(found)} object(s)." if found
@@ -416,6 +418,36 @@ def drone_land(ctx: Ctx, args: dict) -> dict:
     if res["ok"]:
         ctx.drone_out = False
     return res
+
+
+@action("manager", needs=(("target",),), choices={"mode": ("first", "all")}, checkpoint=True, fault="locate")
+def camera_locate(ctx: Ctx, args: dict) -> dict:
+    """Find an object on the floor with the fixed overhead camera (a webcam on the ceiling that sees the whole
+    field; the backup when the scout cannot fly). Nothing moves. Every hit is registered as a finding (f1 = the best
+    match) with the overhead photo as evidence, ready for rover_goto "$finding.f1". Finding nothing is a normal
+    result. Only available when ROBOT STATUS shows an "overhead" camera that is calibrated.
+    Args: target = what to look for, in words, e.g. "crashed drone"; mode = "first" (default) | "all".
+    Returns: {findings: [{id, x, y, by, label}], image_id}."""
+    if ctx.overhead is None:
+        return _err("no overhead camera is installed (set OVERHEAD_CAM)")
+    from .overhead import OverheadError
+    try:
+        hits = ctx.overhead.locate(args["target"])
+    except OverheadError as e:
+        return _err(str(e))
+    if args.get("mode") != "all":
+        hits = hits[:1]
+    jpeg = ctx.overhead.preview_jpeg()
+    image_id = ctx.store.add_image(jpeg) if jpeg else None
+    found = ctx.store.add_findings([{"x": h["x"], "y": h["y"], "label": h["label"], "by": "overhead"} for h in hits])
+    for f in found:
+        if f.image_id is None:
+            ctx.store.update_finding(f.id, image_id=image_id)
+    ctx.store.say("ai", f"Overhead camera found {len(found)} object(s): " +
+                  ", ".join(f"{f.id} at ({f.x:.2f}, {f.y:.2f})" for f in found) if found
+                  else f"Overhead camera sees no {args['target']}.")
+    return {"ok": True, "image_id": image_id,
+            "findings": [f.model_dump(include={"id", "x", "y", "by", "label"}) for f in found]}
 
 
 # ---------------------------------------------------------------- rover tools

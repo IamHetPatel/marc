@@ -8,6 +8,7 @@ from manager.adapters.drone_http import DroneHttp
 from manager.adapters.mock import build_mock
 from manager.adapters.rover_http import RoverHttp
 from manager.controller import Controller
+from manager.detector import SimDetector
 from manager.localization import Localization
 from manager.models import load_arena
 from manager.perception import MockPerception
@@ -33,7 +34,8 @@ def stack(cfg):
         store.mentor_present = True
         ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone,
                   loc=Localization(rover, drone, arena, clock), perception=MockPerception(world),
-                  safety=Safety(cfg, arena, store, rover, drone), clock=clock)
+                  safety=Safety(cfg, arena, store, rover, drone), clock=clock,
+                  detector=SimDetector(drone, cfg.detector_fov_deg, cfg.detector_noise_m, cfg.detector_miss_p))
         yield ctx, world, r_srv, d_srv
 
 
@@ -103,9 +105,10 @@ def test_full_mission_through_the_http_adapters(stack):
     ctrl.world = world
     ctrl.start()
     try:
-        st = run_to_end(ctrl, "Find the object at the exit and bring it back to me", timeout=30)
+        st = run_to_end(ctrl, "Find the crashed drone in field A and move it to the disposal zone", timeout=30)
     finally:
         ctrl.shutdown()
     assert st["mission"]["status"] == "done", st["mission"]["error"]
-    assert st["robots"]["rover"].get("holding") is True
+    wreck = world.objects[0]
+    assert ctx.arena.zones["disposal"].contains(wreck["x"], wreck["y"]) and world.held is None
     assert world.drone["state"] == "landed"

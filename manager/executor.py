@@ -129,7 +129,7 @@ class Executor:
         if self.ctx.cancelled():
             return "stopped"
         self.store.update_mission(reason=d.reason)
-        if d.reason:
+        if d.reason and d.decision != "ask_human":          # the ask_human step posts its own question
             self.store.say("ai", d.reason)
         self.store.event("decision", trigger=trigger.kind, decision=d.decision, reason=d.reason)
         out = self._apply(trigger, d)

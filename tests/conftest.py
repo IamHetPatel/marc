@@ -81,8 +81,10 @@ def finish(ctrl, answers=("yes",), timeout=20.0):
         if ctrl.store.mission.pending_question is not None:
             ctrl.change(answers[min(asked, len(answers) - 1)])
             asked += 1
-            wait_for(lambda: ctrl.store.mission.pending_question is None
-                     or ctrl.store.status in ("done", "failed", "stopped"), what="the answer to be consumed")
+            # consumed = the executor took the answer. (Watching pending_question is not enough: the next question can
+            # replace it faster than we poll.)
+            wait_for(lambda: ctrl._answer is None or ctrl.store.status in ("done", "failed", "stopped"),
+                     what="the answer to be consumed")
         time.sleep(0.005)
     return ctrl.store.to_json()
 

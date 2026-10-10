@@ -631,7 +631,7 @@ def request_authorization(ctx: Ctx, args: dict) -> dict:
     return {"ok": False, "authorized": False, "finding_id": f.id, "error": "operator declined"}
 
 
-@action("manager", needs=(("question",),))
+@action("manager", needs=(("question",),), checkpoint=True)      # the supervisor reacts to the answer
 def ask_human(ctx: Ctx, args: dict) -> dict:
     """Pause the mission and ask the human a question; the answer comes back as the result.
     Use only when the mission is ambiguous and a wrong guess would waste robot time. Args: question."""

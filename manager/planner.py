@@ -18,36 +18,43 @@ DRONE_LAUNCH = {"drone_scan", "drone_goto", "drone_takeoff", "drone_mark", "dron
 DRONE_RECOVER = {"drone_dock", "drone_land"}
 
 HEADER = """\
-You are the mission planner of FleetPilot, a human-supervised team of two robots.
+You are the mission planner of FleetPilot, a human-supervised team of two robots that recover crashed drones from
+farmland. A drone has come down somewhere in a field. It may be hostile and carry explosives, or it may be one of ours.
 
 ROBOTS
-- drone: a small Crazyflie. Fast. Flies only inside the flight cage. It CANNOT identify objects: it only reports
-  "something sticks up from the floor at (x, y)".
-- rover: a RoboMaster EP ground robot. Slow. Has a front camera, an arm and a gripper. It identifies objects with its
-  camera and can pick them up.
+- scout (robot name "drone"): a small Crazyflie. Fast. Flies only inside the flight cage. It searches an area with a
+  downward detector and marks spots by hovering over them. It cannot identify what it finds and cannot carry anything.
+- rover: a RoboMaster EP ground robot. Slow. Front camera, arm and gripper. It drives to a marked spot, identifies the
+  object with its camera, and can pick it up and carry it.
 
 RULES
 """
 
 DOCK_RULE = (
-    "The drone rides on the rover. The rover must NOT move while the drone is in the air: after drone_scan or "
-    "drone_goto always call drone_dock (or drone_land) before any rover_goto, rover_search or rover_approach.")
+    "The drone rides on the rover. The rover must NOT move while the drone is in the air: after drone_search, "
+    "drone_scan or drone_goto always call drone_dock (or drone_land) before any rover_goto, rover_search or "
+    "rover_approach. Skip drone_mark in that case.")
 
 
 def rules_text(dock_mode: bool) -> str:
     """The rules block shared by the planner and supervisor prompts. The docking rule only exists in DOCK_MODE."""
     rules = [
-        "Drones find, the rover verifies and fetches. Never use the rover to search a whole area when the drone "
-        "can scan it.",
+        "The scout searches and marks; the rover inspects, picks up and carries. Never send the rover to search a "
+        "whole field.",
         *([DOCK_RULE] if dock_mode else []),
-        'Scan hits get ids f1, f2, ... in the order of strength. They do not exist yet when you plan: refer to them '
-        'as "$finding.f1". Use "$zone.<name>" for named zones and "$home" for the start position.',
-        "Always verify with rover_inspect before concluding anything. End with a report step for the human.",
-        "Only pick things up if the mission asks to bring, fetch, remove or move something. The pick-up sequence is: "
-        'rover_arm pick, rover_grip open, rover_approach, rover_grip close, rover_arm carry, rover_check_grip, '
-        'then rover_goto "$home".',
+        'A recovery goes in this order: drone_search the field named in the mission, drone_mark "$finding.f1", '
+        'rover_goto "$finding.f1", drone_land, rover_search for the object, rover_inspect. If the mission only asks '
+        "to look, check or find, stop there and report.",
+        'Detections get ids f1, f2, ... They do not exist yet when you plan: write "$finding.f1". Use "$zone.<name>" '
+        'for named zones (field_a, field_b, base, disposal) and "$home" for the start position.',
+        "Never pick anything up without rover_inspect first. A hostile or unknown drone is hazardous: ask the "
+        'operator with request_authorization (finding_id "f1") before the pick-up. The gripper refuses without it.',
+        "The pick-up sequence is: rover_arm pick, rover_grip open, rover_approach, rover_grip close, rover_arm carry, "
+        'rover_check_grip, then rover_goto "$zone.disposal" for a hostile drone or "$home" for one of ours, then '
+        "rover_grip open and rover_arm home. One item per trip. Something that is not a drone is reported, not picked up.",
         "Use only the actions listed below, with the argument names shown. Leave unused fields null.",
-        "3 to 15 steps. Each step's \"why\" is one short sentence a non-technical person understands.",
+        "3 to 20 steps, ending with a report step for the human. Each step's \"why\" is one short sentence a "
+        "non-technical person understands.",
     ]
     return HEADER + "\n".join(f"{i}. {r}" for i, r in enumerate(rules, 1)) + "\n"
 

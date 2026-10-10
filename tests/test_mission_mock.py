@@ -1,5 +1,4 @@
 """Whole missions on the mock world. Deterministic (seeded), free, run on every change."""
-import math
 
 from manager.models import PlanDraft
 
@@ -18,14 +17,13 @@ def test_inspect_mission_end_to_end(make_ctrl):
     assert st["robots"]["drone"] is not None
 
 
-def test_fetch_mission_brings_the_object_home(make_ctrl):
+def test_fetch_mission_delivers_the_object_to_the_disposal_zone(make_ctrl):
     c = make_ctrl()
-    st = run_to_end(c, "Find the object near the exit and bring it back to me")
+    st = run_to_end(c, "A hostile drone crashed in field A. Find it and move it to the disposal zone.")
     assert st["mission"]["status"] == "done", st["mission"]["error"]
-    assert st["robots"]["rover"]["holding"] is True
-    box = next(o for o in c.world.objects if o["label"] == "crashed drone")
-    home = c.base_ctx.arena.home
-    assert math.hypot(box["x"] - home.x, box["y"] - home.y) < 0.6
+    wreck = next(o for o in c.world.objects if o["label"] == "crashed drone")
+    assert c.base_ctx.arena.zones["disposal"].contains(wreck["x"], wreck["y"])
+    assert st["robots"]["rover"]["holding"] is False and c.world.held is None          # delivered and released
     assert c.world.drone["state"] == "landed"
 
 
@@ -46,7 +44,7 @@ def test_nothing_blocking_means_no_rover_trip(make_ctrl):
     c = make_ctrl()
     c.world.objects.clear()
     c.world.rng.random = lambda: 0.99
-    st = run_to_end(c, "Check the exit")
+    st = run_to_end(c, "Check field A", answers=("no",))                       # nothing found: "search field B?" -> no
     assert st["mission"]["status"] == "done"
     assert step_status(st, "rover_goto") == ["skipped"]
 

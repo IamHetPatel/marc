@@ -5,6 +5,7 @@ the fallback when a Gemini call fails: it keeps the mission moving with conserva
 """
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -15,7 +16,8 @@ from .tools import vocabulary_text
 
 log = logging.getLogger("manager.supervisor")
 
-PICK_ACTIONS = {"rover_approach", "rover_grip", "rover_check_grip"}
+PICK_ACTIONS = {"rover_approach", "rover_grip", "rover_check_grip", "rover_arm", "request_authorization"}
+DELIVERY_TARGETS = ("$home", "$zone.disposal")
 
 
 @dataclass
@@ -44,8 +46,14 @@ def _remaining(sit: Situation) -> list:
 
 
 def _is_pick_chain(s: Step) -> bool:
-    return s.action in PICK_ACTIONS or (s.action == "rover_arm" and s.args.get("mode") in ("pick", "carry")) \
-        or (s.action == "rover_goto" and s.args.get("target") == "$home")
+    return s.action in PICK_ACTIONS or (s.action == "rover_goto" and s.args.get("target") in DELIVERY_TARGETS)
+
+
+FIELD_LABELS = {"field_a": ("field A", "field B"), "field_b": ("field B", "field A")}    # (this, the other one)
+
+
+def _zone_of(step: Step) -> str:
+    return str(step.args.get("target", "")).removeprefix("$zone.")
 
 
 class RuleSupervisor:
@@ -59,12 +67,21 @@ class RuleSupervisor:
 
         if trigger.kind == "missing_reference":
             if "finding" in trigger.detail and not sit.findings:
-                return SupervisorDecision(decision="done", reason="The drone found nothing, so there is nothing "
+                return SupervisorDecision(decision="done", reason="The scout found nothing, so there is nothing "
                                           "for the rover to check.")
             return SupervisorDecision(decision="abort", reason=f"The plan refers to {trigger.detail}, "
                                       "which does not exist.")
 
         if trigger.kind == "checkpoint" and step is not None:
+            if step.action == "drone_search":
+                n = len(res.get("findings", []))
+                if n:
+                    return SupervisorDecision(decision="continue",
+                                              reason=f"The scout found {n} object(s); marking the strongest.")
+                this, other = FIELD_LABELS.get(_zone_of(step), (None, None))
+                if other:
+                    return SupervisorDecision(decision="ask_human", reason=f"Nothing found in {this}. Search {other}?")
+                return SupervisorDecision(decision="done", reason="The scout found nothing in that area.")
             if step.action == "drone_scan":
                 n = len(res.get("findings", []))
                 if n == 0:
@@ -74,6 +91,15 @@ class RuleSupervisor:
             if step.action == "rover_inspect":
                 if res.get("category") == "not_a_drone":
                     return SupervisorDecision(decision="done", reason="Not a drone, nothing to recover.")
+                if res.get("category") == "own_drone":
+                    swapped = [step_to_draft(s).model_copy(update={"target": "$home"})
+                               if s.action == "rover_goto" and s.args.get("target") == "$zone.disposal"
+                               else step_to_draft(s)
+                               for s in sit.steps if s.status == "pending" and s.action != "request_authorization"]
+                    if any(s.action == "rover_goto" for s in sit.steps if s.status == "pending") \
+                            and (len(swapped) != len(keep) or swapped != keep):
+                        return SupervisorDecision(decision="replan", remaining_steps=swapped,
+                                                  reason="It is one of ours, so the rover brings it to the base.")
                 if res.get("grippable") is False and any(_is_pick_chain(s) for s in sit.steps if s.status == "pending"):
                     rest = [step_to_draft(s) for s in sit.steps if s.status == "pending" and not _is_pick_chain(s)]
                     return SupervisorDecision(decision="replan", remaining_steps=rest,
@@ -81,6 +107,15 @@ class RuleSupervisor:
                                               "rover will only report it.")
                 return SupervisorDecision(decision="continue", reason="")      # the tool already told the human
             if step.action == "ask_human":
+                asked = re.search(r"Search (field [AB])\?", str(step.args.get("question", "")))
+                if asked:                                          # the question the empty search raised
+                    if str(res.get("answer", "")).strip().lower().startswith("y"):
+                        zone = "field_" + asked.group(1)[-1].lower()
+                        search = StepDraft(robot="drone", action="drone_search", target=f"$zone.{zone}",
+                                           why=f"Search {asked.group(1)} as the operator asked")
+                        return SupervisorDecision(decision="replan", remaining_steps=[search, *keep],
+                                                  reason=f"Searching {asked.group(1)}.")
+                    return SupervisorDecision(decision="done", reason="Search stopped at the operator's request.")
                 return SupervisorDecision(decision="continue", reason="Thanks, continuing.")
             return SupervisorDecision(decision="continue", reason="")
 
@@ -160,4 +195,8 @@ class LLMSupervisor:
             "- replan: remaining_steps is the COMPLETE list of steps still to run; it replaces the remaining plan.\n"
             "- done: the goal is met or impossible to pursue further. abort: unrecoverable failure.\n"
             "- ask_human: you need information only the human has; put the question in reason.\n"
+            "After rover_inspect: not_a_drone -> done (report it, do not pick it up); own_drone -> deliver to $home "
+            "instead of $zone.disposal and skip request_authorization; hostile or unknown -> keep "
+            "request_authorization before the pick-up; a declined authorization -> done. "
+            "A drone_search that finds nothing: ask the operator whether to search the other field.\n"
             "A failed step can be retried by including it again. Do not repeat a failing step more than twice."])

@@ -33,7 +33,7 @@ def test_without_an_llm_the_canned_plan_is_offered_and_flagged(make_ctrl):
     wait_status(c, "awaiting_approval")
     st = c.store.to_json()
     assert st["mission"]["fallback"] is True and st["mission"]["plan_version"] == 1
-    assert st["plan"][0]["action"] == "drone_scan" and all(s["status"] == "pending" for s in st["plan"])
+    assert st["plan"][0]["action"] == "drone_search" and all(s["status"] == "pending" for s in st["plan"])
     assert [s["id"] for s in st["plan"][:3]] == ["s1", "s2", "s3"]
 
 
@@ -255,7 +255,7 @@ def test_mentor_gate_asks_the_human_then_the_scan_is_retried(make_ctrl):
     wait_status(c, "done", "failed")
     st = c.store.to_json()
     assert st["mission"]["status"] == "done", st["mission"]["error"]
-    assert "done" in step_status(st, "drone_scan")
+    assert "done" in step_status(st, "drone_search")
 
 
 def test_replan_budget_ends_in_a_failed_mission_with_a_reason(make_ctrl):
@@ -280,17 +280,20 @@ def test_a_failed_dock_lands_the_drone_and_the_mission_carries_on(make_ctrl):
     assert "failed" in step_status(st, "drone_dock") and "done" in step_status(st, "drone_land")
 
 
-def test_missing_finding_after_an_empty_scan_ends_the_mission_cleanly(make_ctrl):
+def test_an_empty_search_asks_the_operator_and_a_no_ends_the_mission_cleanly(make_ctrl):
     c = make_ctrl()
-    c.start_mission("Check the exit")
+    c.start_mission("Check field A")
     wait_status(c, "awaiting_approval")
     c.world.objects.clear()
-    c.world.rng.random = lambda: 0.99                             # no false positive either
     c.approve(c.store.mission.plan_version)
+    wait_for(lambda: c.store.mission.pending_question is not None, what="the question")
+    assert c.store.mission.pending_question == "Nothing found in field A. Search field B?"
+    c.change("no")
     wait_status(c, "done", "failed")
     st = c.store.to_json()
     assert st["mission"]["status"] == "done" and all(s["status"] in ("done", "skipped") for s in st["plan"])
-    assert any("found nothing" in m["text"] for m in st["messages"])
+    assert any("Search stopped" in m["text"] for m in st["messages"])
+    assert c.world.drone["state"] == "landed"                      # the scout is not left hovering
 
 
 # ---------------------------------------------------------------- planner robustness

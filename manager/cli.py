@@ -10,7 +10,7 @@ import time
 from .controller import Controller
 from .runtime import build_controller
 
-DEFAULT_MISSION = "Check the test zone for anything blocking the exit."
+DEFAULT_MISSION = "A hostile drone crashed in field A. Find it and move it to the disposal zone."
 
 
 def run(ctrl: Controller, text: str, auto_approve: bool, mentor: bool, timeout_s: float, out=sys.stdout,

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FleetPilot Mothership</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="bar">
+    <div class="brand">FleetPilot <span>mothership</span></div>
+    <div id="status" class="pill s-idle" title="Mission status">idle</div>
+    <div id="source" class="pill muted" title="Where the plan came from"></div>
+    <div class="lights" title="Connection to each robot">
+      <span class="light off" id="light-rover"><i></i>rover</span>
+      <span class="light off" id="light-drone"><i></i>scout</span>
+      <span class="light off" id="light-target"><i></i>target</span>
+    </div>
+    <div id="rtt" class="muted"></div>
+    <label class="toggle" title="Drones stay locked unless a mentor is present">
+      <input type="checkbox" id="mentor"> mentor present
+    </label>
+    <!-- Inline handler on purpose: STOP must work even if app.js fails to load or throws. -->
+    <button id="stop" class="stop" type="button"
+            onclick="fetch('/stop',{method:'POST'}).then(function(r){document.getElementById('stop').textContent=r.ok?'STOPPED':'STOP FAILED'}).catch(function(){document.getElementById('stop').textContent='NO CONNECTION'});setTimeout(function(){document.getElementById('stop').textContent='STOP'},2500)">STOP</button>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <main>
+   <div class="col">
+    <section class="card" id="map-card">
+      <h2>Field <small id="calibration"></small></h2>
+      <svg id="map" role="img" aria-label="Map of the field with the robots"></svg>
+      <div class="legend">
+        <span><b class="k rover"></b>rover</span><span><b class="k scout"></b>scout</span>
+        <span><b class="k truth"></b>target (truth)</span><span><b class="k finding"></b>finding</span>
+        <span class="muted">click the map to fill x / y in Manual</span>
+      </div>
+    </section>
+
+    <section class="card" id="camera-card">
+      <h2>Rover camera <small id="camera-id" class="muted"></small></h2>
+      <div class="camera"><img id="camera" alt="Latest rover camera image" hidden><div id="camera-empty" class="muted">no image yet</div></div>
+    </section>
+   </div>
+
+   <div class="col">
+    <section class="card question" id="question-card" hidden>
+      <h2>The AI is asking</h2>
+      <p id="question-text"></p>
+      <div class="row">
+        <button type="button" id="answer-yes" class="primary">Yes</button>
+        <button type="button" id="answer-no" class="danger">No</button>
+      </div>
+    </section>
+
+    <section class="card" id="mission-card">
+      <h2>Mission</h2>
+      <form id="mission-form" class="row">
+        <input id="mission-text" type="text" placeholder="e.g. A hostile drone crashed in field A. Find it and move it to the disposal zone." autocomplete="off">
+        <button type="submit" id="mission-go">Plan</button>
+      </form>
+      <div id="reason" class="reason" hidden></div>
+      <div class="row actions">
+        <button id="approve" type="button" class="primary" disabled>Approve plan</button>
+        <button id="reset" type="button">Reset</button>
+        <a id="report-link" href="/report" target="_blank" rel="noopener" class="muted" hidden>mission report</a>
+      </div>
+      <ol id="plan" class="plan"></ol>
+      <details id="previous" hidden><summary>Previous plan</summary><ol id="previous-plan" class="plan old"></ol></details>
+      <form id="change-form" class="row">
+        <input id="change-text" type="text" placeholder="Change the plan, e.g. skip field A, search field B instead" autocomplete="off">
+        <button type="submit" id="change-go">Send change</button>
+      </form>
+    </section>
+
+    <section class="card" id="scenario-card">
+      <h2>Scenarios</h2>
+      <ul id="scenarios" class="scenarios"></ul>
+    </section>
+
+    <section class="card" id="manual-card">
+      <h2>Manual control <small id="manual-hint" class="muted"></small></h2>
+      <div class="manual-grid">
+        <div>
+          <h3>Scout drone</h3>
+          <div class="row wrap">
+            <button type="button" data-m='{"robot":"drone","action":"drone_takeoff","args":{}}'>Take off</button>
+            <button type="button" data-m='{"robot":"drone","action":"drone_land","args":{}}'>Land</button>
+          </div>
+          <div class="row wrap">
+            <label>x <input class="num" id="d-x" type="number" step="0.1" value="2.4"></label>
+            <label>y <input class="num" id="d-y" type="number" step="0.1" value="1.1"></label>
+            <label>z <input class="num" id="d-z" type="number" step="0.1" value="0.6"></label>
+          </div>
+          <div class="row wrap">
+            <button type="button" id="d-goto">Go to x, y, z</button>
+            <button type="button" id="d-mark">Mark x, y</button>
+          </div>
+        </div>
+        <div>
+          <h3>Rover</h3>
+          <div class="row wrap">
+            <button type="button" data-m='{"robot":"rover","action":"rover_drive","args":{"x":0.3,"y":0,"z":0}}'>Fwd 0.3 m</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_drive","args":{"x":-0.3,"y":0,"z":0}}'>Back 0.3 m</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_drive","args":{"x":0,"y":0,"z":45}}'>Turn left 45°</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_drive","args":{"x":0,"y":0,"z":-45}}'>Turn right 45°</button>
+          </div>
+          <div class="row wrap">
+            <label>x <input class="num" id="r-x" type="number" step="0.1" value="1.5"></label>
+            <label>y <input class="num" id="r-y" type="number" step="0.1" value="1.0"></label>
+            <button type="button" id="r-goto">Go to x, y</button>
+          </div>
+          <div class="row wrap">
+            <button type="button" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"pick"}}'>Arm pick</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"carry"}}'>Arm carry</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"home"}}'>Arm home</button>
+          </div>
+          <div class="row wrap">
+            <button type="button" data-m='{"robot":"rover","action":"rover_grip","args":{"mode":"open"}}'>Grip open</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_grip","args":{"mode":"close"}}'>Grip close</button>
+            <button type="button" data-m='{"robot":"rover","action":"rover_snapshot","args":{}}'>Snapshot</button>
+          </div>
+        </div>
+      </div>
+      <div id="manual-last" class="manual-last muted"></div>
+    </section>
+
+   </div>
+
+    <section class="card wide" id="findings-card">
+      <h2>Findings</h2>
+      <table id="findings"><thead><tr><th>id</th><th>x</th><th>y</th><th>category</th><th>hazardous</th><th>authorized</th><th>status</th><th>photo</th></tr></thead><tbody></tbody></table>
+      <div id="findings-empty" class="muted">nothing found yet</div>
+    </section>
+
+    <section class="card wide" id="log-card">
+      <h2>Log</h2>
+      <ul id="log" class="log"></ul>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

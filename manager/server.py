@@ -2,21 +2,29 @@
 
     POST /mission {"text"}   POST /approve {"plan_version"}   POST /change {"text"}   POST /stop
     POST /mentor {"present"} POST /reset                      GET /state              GET /images/{id}.jpg
+    POST /manual {"robot","action","args"}   POST /plan {"title","steps"}   GET /scenarios   POST /scenarios/{name}/load
+    GET /arena   GET /report                 GET /ui/ (the dashboard)       GET / -> /ui/
 
 Run:  ROVER=mock DRONE=mock uvicorn manager.server:app --port 8002
 """
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .controller import Conflict, Controller
 from .models import StepDraft
 from .scenarios import UnknownScenario, list_scenarios
 from .tools import validate_step
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"       # the dashboard: plain HTML / JS, no build step
 
 
 class MissionBody(BaseModel):
@@ -79,6 +87,10 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        return RedirectResponse("/ui/")
 
     @app.get("/state")
     def state():
@@ -154,6 +166,7 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="no such image")
         return Response(content=data, media_type="image/jpeg")
 
+    app.mount("/ui", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
     return app
 
 

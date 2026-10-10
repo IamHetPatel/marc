@@ -49,6 +49,7 @@ BROADCAST_PORT = 40926
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("PORT", "8000"))
 MOCK = os.getenv("MOCK") == "1"
+VIDEO = os.getenv("ROVER_VIDEO", "1") != "0"   # 0: no camera stream (less Wi-Fi load; use it to rule video out)
 SDK_Y_SIGN = float(os.getenv("SDK_Y_SIGN", "-1"))
 SDK_Z_SIGN = float(os.getenv("SDK_Z_SIGN", "-1"))
 
@@ -82,16 +83,33 @@ class BadRequest(Exception):
 
 # ---------------------------------------------------------------- the link to the robot
 
+class LinkBusy(ConnectionError):
+    """The link is serving other commands and this one could not get its turn in time (HTTP 503, link stays up)."""
+
+
 class SdkLink:
     """One TCP connection to the EP's plaintext SDK (port 40923). The lock makes every command exactly one
     request/reply, so /stop and the watchdog can interleave with a /drive that is waiting for the robot.
 
     A background thread keeps the link up: it dials (and with host "auto" first finds the EP on this network), and
-    redials whenever a command fails. Requests never wait for that: while the EP is away they fail at once with the
-    reason, so a dead battery or a Wi-Fi drop shows up on the dashboard instead of stalling every call."""
+    redials when the link is really gone. Requests never wait for that: while the EP is away they fail at once with
+    the reason, so a dead battery or a Wi-Fi drop shows up on the dashboard instead of stalling every call.
 
-    INIT = ("robot mode free", "stream on")
+    Stability rules, learned on the real EP (2026-10-10: connect / time out / "EP ignored 'command'" every second):
+      * a slow reply is NOT a dead link. One timeout keeps the socket (the late reply is drained before the next
+        command); only MAX_TIMEOUTS in a row, or a real socket error, drop it. Redialling after every hiccup made it
+        worse: the EP still held the old session and ignored the new one.
+      * before closing, send "quit" so the EP releases its SDK session; if it still ignores "command", back off
+        (RETRY_S doubling up to RETRY_MAX_S) instead of hammering it every second.
+      * waiting for the lock is bounded (LOCK_WAIT_S): callers get a quick "busy" instead of piling up threads.
+      * a reply is complete at the first recv unless it was visibly cut; don't wait for a ';' the EP may not send."""
+
+    INIT = ("robot mode free",) + (("stream on",) if VIDEO else ())
     RETRY_S = 1.0
+    RETRY_MAX_S = 8.0
+    MAX_TIMEOUTS = 3
+    LOCK_WAIT_S = 2.0
+    SPLIT_WAIT_S = 0.03
 
     def __init__(self, host: str, port: int = SDK_PORT, timeout: float = 5.0):
         self.auto = host == "auto"
@@ -101,6 +119,9 @@ class SdkLink:
         self._lock = threading.Lock()
         self._sock = None
         self._halt = threading.Event()
+        self._timeouts_in_row = 0
+        self.stats = {"commands": 0, "timeouts": 0, "busy": 0, "connects": 0, "drops": 0, "rtt_ms": None,
+                      "rtt_ms_max": 0}
 
     @property
     def label(self) -> str:
@@ -129,18 +150,38 @@ class SdkLink:
                 self._drop()
 
     def cmd(self, command: str) -> str:
-        with self._lock:
+        if not self._lock.acquire(timeout=self.LOCK_WAIT_S):
+            self.stats["busy"] += 1
+            raise LinkBusy(f"EP link busy: {command!r} waited {self.LOCK_WAIT_S:g} s for its turn")
+        try:
             if self._sock is None:
                 raise ConnectionError(f"EP not connected: {self.error}")
+            t0 = time.monotonic()
             try:
-                return self._exchange(self._sock, command)
+                if self._timeouts_in_row:               # a reply is still out there: get back in step first
+                    self._resync(self._sock)
+                reply = self._exchange(self._sock, command)
+            except socket.timeout:
+                self.stats["timeouts"] += 1
+                self._timeouts_in_row += 1
+                if self._timeouts_in_row >= self.MAX_TIMEOUTS:
+                    self.error = f"{self._timeouts_in_row} replies in a row timed out"
+                    self._drop()
+                raise TimeoutError(f"EP did not answer {command!r} within {self.timeout:g} s") from None
             except OSError as e:
                 self.error = str(e) or type(e).__name__
                 self._drop()
                 raise
+            self._timeouts_in_row = 0
+            rtt = round((time.monotonic() - t0) * 1000)
+            self.stats["commands"] += 1
+            self.stats["rtt_ms"], self.stats["rtt_ms_max"] = rtt, max(self.stats["rtt_ms_max"], rtt)
+            return reply
+        finally:
+            self._lock.release()
 
     def _keep_connected(self):
-        said = None
+        said, wait = None, self.RETRY_S
         while not self._halt.is_set():
             if self._sock is None:
                 try:
@@ -150,12 +191,14 @@ class SdkLink:
                     if self.error != said:                       # say each new reason once, not every second
                         print(f"EP not connected: {self.error}")
                         said = self.error
+                    wait = min(wait * 2, self.RETRY_MAX_S)       # give the EP time to drop its old session
                 else:
                     with self._lock:
-                        self._sock, self.error = sock, None
+                        self._sock, self.error, self._timeouts_in_row = sock, None, 0
+                    self.stats["connects"] += 1
                     print(f"EP connected at {self.label}")
-                    said = None
-            self._halt.wait(self.RETRY_S)
+                    said, wait = None, self.RETRY_S
+            self._halt.wait(wait if self._sock is None else self.RETRY_S)
 
     def _dial(self) -> socket.socket:
         """A fresh, handshaken socket. With host "auto": the last address first, else whatever EP is on the network."""
@@ -177,6 +220,8 @@ class SdkLink:
 
     def _handshake(self, address: str) -> socket.socket:
         sock = socket.create_connection((address, self.port), timeout=min(self.timeout, 3.0))
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)       # tiny commands: send them now
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         sock.settimeout(self.timeout)
         try:
             reply = self._exchange(sock, "command")
@@ -196,6 +241,14 @@ class SdkLink:
         return sock
 
     def _drop(self):
+        """Close the link. "quit" first (best effort, no reply awaited) so the EP frees its SDK session at once."""
+        if self._sock is not None:
+            self.stats["drops"] += 1
+            try:
+                self._sock.settimeout(0.2)
+                self._sock.sendall(b"quit;")
+            except OSError:
+                pass
         try:
             self._sock.close()
         except (OSError, AttributeError):
@@ -208,7 +261,7 @@ class SdkLink:
         data = sock.recv(1024)
         if not data:
             raise ConnectionError("EP closed the connection")
-        sock.settimeout(0.2)                    # replies end with ';', wait briefly if one arrived split
+        sock.settimeout(self.SPLIT_WAIT_S)      # complete unless cut mid-way; never wait long for a ';'
         try:
             while not data.rstrip().endswith(b";"):
                 more = sock.recv(1024)
@@ -221,8 +274,38 @@ class SdkLink:
             sock.settimeout(self.timeout)
         return data.decode("utf-8", "replace").strip().rstrip(";").strip()
 
-    def _drain(self, sock: socket.socket):
-        """Drop a late reply to an earlier command that timed out, so replies stay in step with commands."""
+    VERSION_RE = re.compile(rb"\d+\.\d+\.\d+\.\d+")
+
+    def _resync(self, sock: socket.socket):
+        """The plaintext SDK has no sequence numbers, so after a timeout the next reply might be the late one.
+        Ask for the version (its answer, e.g. 'version 00.00.00.89', looks like no other reply) and throw away
+        everything up to it. Raises socket.timeout if even that does not come back."""
+        self._drain(sock)
+        sock.sendall(b"version;")
+        buf, t_end = b"", time.monotonic() + self.timeout
+        while not self.VERSION_RE.search(buf):
+            left = t_end - time.monotonic()
+            if left <= 0:
+                raise socket.timeout("no answer while resynchronising")
+            sock.settimeout(left)
+            try:
+                data = sock.recv(1024)
+            finally:
+                sock.settimeout(self.timeout)
+            if not data:
+                raise ConnectionError("EP closed the connection")
+            buf += data
+        self._drain(sock, wait_s=self.SPLIT_WAIT_S)
+
+    def _drain(self, sock: socket.socket, wait_s: float = 0.0):
+        """Drop a late reply to an earlier command that timed out, so replies stay in step with commands.
+        wait_s > 0 also waits that long for one that is still on its way."""
+        if wait_s > 0:
+            sock.settimeout(wait_s)
+            try:
+                sock.recv(4096)
+            except (socket.timeout, BlockingIOError, InterruptedError):
+                pass
         sock.setblocking(False)
         try:
             while sock.recv(4096):
@@ -405,6 +488,7 @@ class Rover:
         self._battery = (None, -1e9)
         self.drive_speed, self.turn_speed = DRIVE_SPEED, TURN_SPEED
         self.grip_wait, self.poll_s = GRIP_WAIT, 0.1
+        self._pose = (None, -1e9)           # (absolute SDK pose, monotonic time): /pose answers from this
 
     def setup(self):
         try:
@@ -421,13 +505,22 @@ class Rover:
 
     # --- SDK helpers
 
+    def _cmd(self, command: str) -> str:
+        """Every robot command goes through here: a failed one also invalidates the pose cache, so /pose never
+        serves a position from before the link went bad."""
+        try:
+            return self.link.cmd(command)
+        except OSError:
+            self._pose = (None, -1e9)
+            raise
+
     def _ok(self, command: str):
-        reply = self.link.cmd(command)
+        reply = self._cmd(command)
         if not reply.lower().startswith("ok"):
             raise SdkError(f"robot said {reply!r} to {command!r}")
 
     def _query(self, command: str) -> list:
-        reply = self.link.cmd(command)
+        reply = self._cmd(command)
         try:
             return [float(v) for v in reply.split()]
         except ValueError:
@@ -435,7 +528,25 @@ class Rover:
 
     def _abs_pose(self):
         x, y, yaw = self._query("chassis position ?")[:3]
-        return x, SDK_Y_SIGN * y, SDK_Z_SIGN * yaw
+        p = (x, SDK_Y_SIGN * y, SDK_Z_SIGN * yaw)
+        self._pose = (p, time.monotonic())
+        return p
+
+    def poll(self, stop: threading.Event, period_s: float = 0.1):
+        """Keep the pose (and battery) fresh in the background, so /pose never queues behind the robot link.
+        Skips a round while a drive or arm action holds the link; those read the pose themselves."""
+        while not stop.wait(period_s):
+            if not self.link.connected or self.motion.locked():
+                continue
+            try:
+                self._abs_pose()
+                self.battery()
+            except (OSError, SdkError):
+                pass                        # the link counts it; /health and /pose report it
+
+    def pose_age(self) -> Optional[float]:
+        p, t = self._pose
+        return None if p is None else round(time.monotonic() - t, 2)
 
     def _arm_pos(self):
         x, y = self._query("robotic_arm position ?")[:2]
@@ -451,16 +562,30 @@ class Rover:
     def _busy(self) -> dict:
         return {"ok": False, "error": "busy: another drive, grip or arm action is running (try /stop)"}
 
+    def _patient(self, read, tries: int = 3):
+        """One reading, allowing a couple of late replies: a slow answer is not a reason to abandon a move."""
+        for i in range(tries):
+            try:
+                return read()
+            except (TimeoutError, LinkBusy):
+                if i == tries - 1:
+                    raise
+
     def _wait_settled(self, read, expected_s: float, tol) -> str:
         """Poll `read` until it stops changing (3 polls in a row) and at least half the expected time passed.
-        The plaintext SDK says ok when it accepts a move, not when the move ends."""
+        The plaintext SDK says ok when it accepts a move, not when the move ends. A poll that times out is skipped."""
         t0 = time.monotonic()
         deadline = t0 + 2 * expected_s + 3.0
-        prev, still = read(), 0
+        prev, still = self._patient(read), 0
         while True:
             if self.cancel.wait(self.poll_s):
                 return "stopped"
-            cur = read()
+            try:
+                cur = read()
+            except (TimeoutError, LinkBusy):
+                if time.monotonic() > deadline:
+                    return "timeout"
+                continue
             still = 0 if any(abs(a - b) > t for a, b, t in zip(cur, prev, tol)) else still + 1
             prev = cur
             now = time.monotonic()
@@ -486,11 +611,17 @@ class Rover:
             self.origin = p
         return _relative(p, self.origin)
 
+    POSE_MAX_AGE_S = 0.5
+
     def pose(self, reset: bool = False) -> dict:
-        p = self._abs_pose()
+        """From the poller's cache when it is fresh; else one live read (and that error if the EP is away)."""
+        p, t = self._pose
+        age = time.monotonic() - t
+        if p is None or age > self.POSE_MAX_AGE_S or reset:
+            p, age = self._abs_pose(), 0.0
         if reset:
             self.origin = p
-        return {"ok": True, **self._rel(p)}
+        return {"ok": True, **self._rel(p), "age_s": round(age, 2)}
 
     def stop(self) -> dict:
         self.cancel.set()
@@ -534,7 +665,7 @@ class Rover:
             self.cancel.clear()
             if self.speed_until is not None:
                 self._halt()
-            start = self._abs_pose()
+            start = self._patient(self._abs_pose)
             if (x, y, z) != (0.0, 0.0, 0.0):
                 self._ok(f"chassis move x {_f(x)} y {_f(SDK_Y_SIGN * y)} z {_f(SDK_Z_SIGN * z, 1)}"
                          f" vxy {_f(v, 2)} vz {_f(vz, 1)}")
@@ -542,7 +673,7 @@ class Rover:
                 result = self._wait_settled(self._abs_pose, expected, (0.003, 0.003, 0.5))
             else:
                 result = "done"
-            end = self._abs_pose()
+            end = self._patient(self._abs_pose)
         finally:
             self.motion.release()
         moved = _relative(end, start)
@@ -564,7 +695,7 @@ class Rover:
             self.cancel.clear()
             self._ok(f"robotic_gripper {action} {GRIP_POWER}")
             self.cancel.wait(self.grip_wait)
-            code = self.link.cmd("robotic_gripper status ?").strip()
+            code = self._cmd("robotic_gripper status ?").strip()
         finally:
             self.motion.release()
         state = {"0": "closed", "1": "partly open", "2": "open"}.get(code, code)
@@ -711,7 +842,8 @@ def _health(s, q):
     """Always answers while the server runs: with the EP away it says why (ok: false), so the dashboard can tell
     "rover server down" from "EP off or out of range"."""
     r = s.rover
-    base = {"camera": s.camera.status, "robot": r.link.label, "mock": s.mock, "moving": r.moving(), "last": r.last}
+    base = {"camera": s.camera.status, "robot": r.link.label, "mock": s.mock, "moving": r.moving(), "last": r.last,
+            "pose_age_s": r.pose_age(), "link": dict(getattr(r.link, "stats", {}))}
     if not r.link.connected:
         return {"ok": False, "error": f"EP not connected: {r.link.error}", "battery": None, **base}
     return {"ok": True, "battery": r.battery(), **base}
@@ -835,9 +967,13 @@ def main():
     else:
         print(f"EP not reachable yet ({link.error}).\nServing anyway; the link keeps trying and connects when the EP "
               "appears (ROBOT_HOST=<ip> skips the search).")
-    camera.start()
+    if VIDEO or MOCK:
+        camera.start()
+    else:
+        camera.status = "disabled (ROVER_VIDEO=0)"
     stop = threading.Event()
     threading.Thread(target=rover.watchdog, args=(stop,), daemon=True).start()
+    threading.Thread(target=rover.poll, args=(stop,), daemon=True, name="pose-poller").start()
     base = f"http://{_lan_ip()}:{HTTP_PORT}"
     print(f"Rover API on {base}   teleop page: {base}/   try: curl {base}/health\nCtrl-C stops the robot and quits.")
     signal.signal(signal.SIGTERM, signal.default_int_handler)     # `kill` also stops the robot on the way out

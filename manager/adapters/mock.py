@@ -157,8 +157,14 @@ class MockWorld:
                     "home": dict(self.pad) if self.pad else None}
 
     def target_pose(self) -> dict:
-        """Ground truth of the 'crashed drone' (the real target Crazyflie reports this via Lighthouse)."""
+        """Ground truth of the 'crashed drone' (the real target Crazyflie reports this via Lighthouse). With
+        ROVER_RIDER=target that Crazyflie sits on the rover instead, so it reports the rover's true pose."""
         with self.lock:
+            if self.cfg.rover_rider == "target":
+                po = self.arena.plate_offset
+                ox, oy = _rot(po.x, po.y, self.rover[2])
+                return {"ok": True, "x": round(self.rover[0] + ox, 3), "y": round(self.rover[1] + oy, 3), "z": 0.3,
+                        "yaw": round(_wrap(self.rover[2] + (po.yaw or 0.0)), 2), "state": "landed"}
             for o in self.objects:
                 if o.get("kind") in ("hostile_drone", "own_drone"):
                     return {"ok": True, "x": round(o["x"], 3), "y": round(o["y"], 3), "z": 0.0, "state": "landed"}

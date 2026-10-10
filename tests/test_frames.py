@@ -94,3 +94,30 @@ def test_a_launch_pad_outside_the_arena_grows_the_view_and_starts_the_mock_drone
     from manager.models import Pose
     a = a.model_copy(update={"launch_pad": Pose(x=-0.5, y=0.4)})
     assert a.view_rect().x0 == -0.5
+
+
+# ---------------------------------------------------------------- ROVER_RIDER: a Crazyflie riding on the EP
+@pytest.fixture
+def rider_ctx(cfg):
+    import dataclasses
+    from manager.runtime import build_ctx
+    c, world = build_ctx(dataclasses.replace(cfg, rover_rider="target"))
+    c.world = world
+    c.store.new_mission("test")
+    c.store.mentor_present = True
+    return c
+
+
+def test_with_a_rider_the_rover_follows_lighthouse_even_from_a_wrong_start(rider_ctx):
+    c = rider_ctx
+    c.world.rover = [1.5, 2.0, 30.0]                 # NOT on the start cross: odometry alone would be far off
+    p = c.loc.rover_pose()
+    assert p.source == "lighthouse_rider"
+    assert (round(p.x, 2), round(p.y, 2), round(p.yaw)) == (1.5, 2.0, 30)
+    r = run_action(c, "rover_goto", {"x": 2.5, "y": 1.0})
+    assert r["arrived"] and abs(c.world.rover[0] - 2.5) < 0.2 and abs(c.world.rover[1] - 1.0) < 0.2
+
+
+def test_with_the_target_riding_the_detector_ignores_it_and_the_map_has_no_truth(rider_ctx, make_ctrl):
+    assert rider_ctx.detector.live_ok is False
+    assert all(t["x"] != rider_ctx.world.rover[0] for t in rider_ctx.detector.truth())

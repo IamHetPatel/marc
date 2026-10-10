@@ -418,6 +418,8 @@ class Monitor(threading.Thread):
         except RobotError:
             self._fail("drone")
         try:                                        # ground truth for the dashboard; never feeds the watchdog
+            if ctx.cfg.rover_rider == "target":
+                raise RobotError("the target Crazyflie rides on the rover")
             t = ctx.drone.pose(cf="target")
             if t.get("ok", True) is False:
                 store.merge_robot("target", online=False)

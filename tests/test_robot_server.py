@@ -69,7 +69,8 @@ def test_pose_is_in_the_start_frame_after_turning(served):
     p = client.pose()
     assert p["x"] == pytest.approx(0.0, abs=0.02) and p["y"] == pytest.approx(0.2, abs=0.02)
     assert p["yaw"] == pytest.approx(90, abs=1)
-    assert get(base, "/pose", reset=1) == {"ok": True, "x": 0.0, "y": 0.0, "yaw": 0.0}
+    p = get(base, "/pose", reset=1)
+    assert {k: p[k] for k in ("ok", "x", "y", "yaw")} == {"ok": True, "x": 0.0, "y": 0.0, "yaw": 0.0}
 
 
 def test_speed_stops_by_itself(served):

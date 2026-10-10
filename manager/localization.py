@@ -48,8 +48,13 @@ class LocalizedPose:
 
 
 class Localization:
-    def __init__(self, rover, drone, arena: Arena, clock, use_drone_fix: bool = True, overhead=None):
+    RIDER_FRESH_S = 1.0
+
+    def __init__(self, rover, drone, arena: Arena, clock, use_drone_fix: bool = True, overhead=None,
+                 rider: str = ""):
         self.rover, self.drone, self.arena, self.clock = rover, drone, arena, clock
+        self.rider = rider                      # "target" | "scout" | "": a Crazyflie riding on the EP (ROVER_RIDER)
+        self._rider_t = -1e9
         self.use_drone_fix = use_drone_fix      # False when the drone is a mock and the rover is real
         self.overhead = overhead                # OverheadCamera or None
         self._sighting_t = None                 # capture time of the last overhead sighting used as a fix
@@ -89,6 +94,8 @@ class Localization:
                 yaw = dp["yaw"] - (po.yaw or 0.0)
                 ox, oy = _rot(po.x, po.y, yaw)
                 self.fix = Fix(Pose(x=dp["x"] - ox, y=dp["y"] - oy, yaw=yaw), odom, now, "docked_drone")
+        if self.rider and now - self._rider_t >= DRONE_POLL_S:
+            self._rider_fix(odom, now)
         if self.overhead is not None and not self._docked:
             self._overhead_fix(odom, now)
         if self.fix is None:
@@ -100,12 +107,29 @@ class Localization:
         dx, dy = _rot(odom["x"] - f.odom["x"], odom["y"] - f.odom["y"], dyaw)
         if self._docked:
             source = "docked_drone"
+        elif f.source == "lighthouse_rider":
+            source = "lighthouse_rider" if now - f.t <= self.RIDER_FRESH_S else "rider+odometry"
         elif f.source == "overhead_camera" and now - f.t <= self.arena.overhead.max_age_s:
             source = "overhead_camera"
         else:
             source = {"start_cross": "start_cross+odometry",
                       "crazyflie_wand": "crazyflie+odometry"}.get(f.source, "fix+odometry")
         return LocalizedPose(f.lh.x + dx, f.lh.y + dy, _wrap(odom["yaw"] + dyaw), source, now - f.t)
+
+    def _rider_fix(self, odom: dict, now: float):
+        """A Crazyflie on the EP's top plate (motors off) knows its Lighthouse pose; minus the plate offset that is
+        the rover's pose, in the very frame the scout flies in. Wheel odometry only bridges the gaps between reads."""
+        self._rider_t = now
+        try:
+            dp = self.drone.pose(cf=self.rider)
+        except RobotError:
+            return
+        if dp.get("ok", True) is False or dp.get("state") == "flying" or not isinstance(dp.get("x"), (int, float)):
+            return
+        po = self.arena.plate_offset
+        yaw = float(dp.get("yaw") or 0.0) - (po.yaw or 0.0)
+        ox, oy = _rot(po.x, po.y, yaw)
+        self.fix = Fix(Pose(x=dp["x"] - ox, y=dp["y"] - oy, yaw=yaw), odom, now, "lighthouse_rider")
 
     def _overhead_fix(self, odom: dict, now: float):
         """Re-anchor on a NEW, fresh overhead sighting only: re-using an old one with a newer odometry reading would

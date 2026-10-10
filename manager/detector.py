@@ -32,6 +32,7 @@ class SimDetector:
         self.fov_deg, self.noise_m, self.miss_p = fov_deg, noise_m, miss_p
         self.rng = rng or random.Random()
         self.targets = [Target(id="t1", source="live")]     # default: the second Crazyflie, wherever it is
+        self.live_ok = True                 # False when the target Crazyflie rides on the rover (ROVER_RIDER=target)
 
     def set_targets(self, targets: list):
         self.targets = list(targets)
@@ -45,6 +46,8 @@ class SimDetector:
         out, live = [], None
         for t in self.targets:
             if t.source == "live":
+                if not self.live_ok:
+                    continue
                 if live is None:
                     try:
                         live = self.drone.pose(cf="target")

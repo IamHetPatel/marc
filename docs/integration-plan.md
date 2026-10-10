@@ -37,6 +37,16 @@ flowchart LR
   (`POST /rover/anchor {"cf": "target"}`). That sets the rover's x, y **and heading** from Lighthouse
   (`pose_source: crazyflie+odometry`). Re-anchor whenever it drifts. `rover_goto` also stops if the rover's position
   leaves the mapped area, instead of chasing a goal it can't reach.
+- **Continuous Lighthouse pose for the rover (`ROVER_RIDER=target`):** the target Crazyflie rides on the EP's top
+  plate (centred, nose forward, motors off) and its Lighthouse pose *is* the rover's pose, read ~3×/s; wheel
+  odometry only bridges between reads (`pose_source: lighthouse_rider`). The "wreck" must then come from a scenario's
+  fixed coordinates (the detector ignores the live target). Set `plate_offset` in the arena if the Crazyflie is not
+  over the rover's centre.
+- **EP link stability (`rover/robot_server.py`):** a slow reply no longer drops the link (only 3 timeouts in a row
+  do); after a timeout the link resyncs with `version` so replies never shift; `quit` is sent before closing so the
+  EP frees its session; reconnects back off; `/pose` is served from a 10 Hz background poll; callers get a quick
+  "busy" instead of piling up. `/health` → `link` shows commands, timeouts, drops, connects and round-trip times.
+  If timeouts persist, try `ROVER_VIDEO=0` (no camera stream) to see whether Wi-Fi load from the video is the cause.
 - **Map and launch pad:** the dashboard shows `view` (the whole net, `arena.floor.json`), and grows if a robot shows up
   outside it. The scout's launch pad is its first takeoff spot (`/pose` → `home` from `drone_server.py`).
   `drone_home` ("Back to pad") flies there at cruise height and lands; the scenarios use it instead of `drone_land`,

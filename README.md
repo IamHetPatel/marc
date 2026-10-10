@@ -19,7 +19,7 @@ flowchart TB
     A1[Rover adapter<br/>HTTP :8000]
     A2[Drone adapter<br/>HTTP :8001 🟡 / cflib in-process ✅]
     A3[ROS adapter<br/>rosbridge websocket ✅]
-    R1[RoboMaster EP<br/>robot_server.py 🟡]
+    R1[RoboMaster EP<br/>rover/robot_server.py ✅]
     R2[Crazyflie scouts<br/>cflib + Lighthouse]
     R3[Turtlebot / ROSbot<br/>Nav2, backup]
 
@@ -54,7 +54,8 @@ plan → (human approves) → act via tools → look (camera) → verify → con
 | [brain.py](brain.py) | **Single-robot closed loop.** Look → decide → act → look, VLM sees the camera each turn. | The verify-with-camera pattern, against the rover HTTP API. |
 | [fleet_agent.py](fleet_agent.py) | **ROS 2 adapter layer** over rosbridge (`roslibpy`). One `Robot` class per platform. | Backup path if we get a Turtlebot/ROSbot instead of (or in addition to) the EP. |
 | [gesture_teleop.py](gesture_teleop.py) | Webcam hand gestures → `/speed`. | Manual override / demo extra. Not part of the AI loop. |
-| `robot_server.py` 🟡 | HTTP server on the Windows laptop wrapping the RoboMaster SDK. | **Referenced by every file above but not in this repo.** Rover squad owns it. |
+| [rover/robot_server.py](rover/robot_server.py) | HTTP server (:8000) wrapping the EP's plaintext SDK; runs on any Mac/Linux laptop on the hotspot. Also serves a keyboard teleop page at `/`. `MOCK=1` runs it without hardware. | The rover API every file above calls. Setup: [rover/README.md](rover/README.md). |
+| [rover/control1.py](rover/control1.py) | The original stand-alone browser teleop (EP in AP mode). | Manual driving only; can't run alongside `robot_server.py` (the EP takes one controller). |
 
 All Python files use env vars for config; none take a config file.
 
@@ -140,7 +141,7 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 
 | Planned (Team Plan) | State | Owner |
 | --- | --- | --- |
-| Rover server `:8000` with `/drive /speed /grip /arm /snapshot /stop /pose` | 🟡 `robot_server.py` not in repo; the endpoints below are **inferred from callers** | Rover squad |
+| Rover server `:8000` with `/drive /speed /grip /arm /snapshot /stop /pose` | ✅ `rover/robot_server.py` on the fake EP; 🟡 not yet run on the real EP (sign check, arm presets: F1) | Rover squad |
 | Drone server `:8001` with `/takeoff /goto /scan /land /pose` | 🟡 Not in repo. `fleet.py` drives Crazyflies **in-process with cflib** instead of over HTTP | Drone squad |
 | AI manager `:8002` with `/mission /approve /stop /state` | ✅ in `manager/` (on mocks; not yet on real robots). `fleet.py::run` stays the one-shot reference | AI manager squad |
 | Human **approve / change / stop** gate | ✅ in `manager/` (plan → Approve → run, `409` on stale approvals, Stop from any state) | AI manager squad |
@@ -149,20 +150,21 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 | `MOCK=1` everywhere | 🟡 Done in `fleet.py`, `fleet_agent.py` and `manager/` (`ROVER=mock DRONE=mock`); missing in `brain.py` | AI manager squad |
 | Unified drone + rover on one map | ✅ in `fleet.py` via the rider trick; the digital-twin view is 🟡 | Shared-map squad |
 
-### Rover HTTP API as the callers use it (✅ verified against call sites, 🟡 server not seen)
+### Rover HTTP API (`rover/robot_server.py`; every endpoint is a GET, curl-able, JSON `{ok, ...}`)
 
 | Endpoint | Params | Used by | Meaning |
 | --- | --- | --- | --- |
-| `GET /drive` | `x`, `y`, `z` | brain | **Relative move**: forward m, left m, turn-left deg (per `brain.move`). |
-| `GET /speed` | `x`, `y`, `z`, `t` | fleet, gesture_teleop | **Velocity command** held for `t` seconds. |
-| `GET /grip` | `action=open\|close` | brain, fleet | Gripper. |
-| `GET /arm` | `x`, `y` (mm) | brain | Relative arm move. |
-| `GET /snapshot` | none | brain, fleet | Returns a JPEG (`200` on success). |
-| `GET /stop` | none | fleet | Zero velocity. |
-| `GET /pose` | none | 🟡 plan only | `{x, y, yaw}` in the shared frame (odometry fallback). |
+| `GET /health` | none | manager (floor check) | `{battery, camera, moving, last}`. |
+| `GET /drive` | `x`, `y`, `z` (default 0), optional `v`, `vz` | brain, manager | **Blocking relative move**: forward m, left m, turn-left deg; returns `moved` and `pose`. Max 2 m / 360°. |
+| `GET /speed` | `x`, `y`, `z`, `t` (default 1) | fleet, gesture_teleop, manager | **Velocity** (m/s, m/s left, deg/s left), clamped to 0.5 m/s / 90 °/s; stops by itself after `t` (max 3 s). |
+| `GET /grip` | `action=open\|close` | brain, fleet, manager | Gripper; returns `state`. |
+| `GET /arm` | `preset=pick\|carry\|home`, or `x`, `y` (mm, relative), or nothing (read position) | brain, manager | Arm. Presets are placeholders until F1. |
+| `GET /snapshot` | none | brain, fleet, manager | Full-resolution JPEG; `503` while there is no frame. |
+| `GET /stop` | none | fleet, manager | Zero velocity now; also interrupts a running `/drive`. |
+| `GET /pose` | `reset=1` optional | manager | Wheel odometry since server start: `{x, y, yaw}`, y left, yaw CCW. |
 
-⚠️ `fleet.py` sends `y = SIGN_Y * …` because the RoboMaster SDK treats **+y as right** while `brain.py` documents `left_m`. The two files disagree about which side is positive. The rover server must pick one convention and document it.
-⚠️ `/drive` is open loop and blocking in the plan. `/speed` must auto-expire after `t`, so a dropped Wi-Fi/5G link stops the robot instead of leaving it driving.
+**One convention: +y = left, +z/yaw = counter-clockwise on every endpoint.** The server converts to the SDK's +y = right / +z = clockwise (`SDK_Y_SIGN`, `SDK_Z_SIGN`). `fleet.py`'s `SIGN_Y` therefore should be `+1` against this server.
+HTTP `503` means the server is up but the EP didn't answer; a refused command is `200` with `ok: false`.
 
 ### AI manager ✅ (mocks) / 🟡 (real robots)
 

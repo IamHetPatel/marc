@@ -305,7 +305,7 @@ Cost: each VLM call takes roughly 1–3 s, so an approach is 5–10 calls. That 
 - `/snapshot` returns a JPEG. `/stop` and `/grip?action=open|close` are already used by the starter code.
 - **`/arm?preset=pick|carry|home`** (our default). If the rover squad only has relative `/arm?x&y` (millimetres), set `ROVER_ARM_MODE=relative` and tune `ARM_TARGETS` in `adapters/rover_http.py` on the floor.
 - `/pose` → `{x, y, yaw}` from wheel odometry. We fuse it with the Lighthouse fix ourselves.
-- **Agree on one sign for sideways `y`.** `brain.py` says +y = left, `fleet.py` flips it because the SDK uses +y = right. Pick one and write it in the README. Until then our client assumes **`/drive` y = left** and **`/speed` y = right** (the only evidence in the starter files) and exposes `ROVER_DRIVE_Y_SIGN` / `ROVER_SPEED_Y_SIGN` to flip either. First floor test: strafe left with `/speed` and check.
+- **Sideways `y` (settled):** `rover/robot_server.py` takes **+y = left on both `/drive` and `/speed`** and converts to the SDK's +y = right itself, so `ROVER_DRIVE_Y_SIGN` / `ROVER_SPEED_Y_SIGN` default to `1`. First floor test: strafe left with `/drive?y=0.3` and check; if it goes right, flip `SDK_Y_SIGN` on the rover server, not the manager.
 - Optional: the IR distance sensor reading, if the kit has one.
 
 **Drone (`:8001`):**

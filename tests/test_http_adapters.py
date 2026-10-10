@@ -55,8 +55,8 @@ def test_drone_client_passes_cf_and_takeoff_height(stack):
 
 
 def test_speed_sign_convention_survives_the_wire(stack):
-    """Manager says +y = left. The fake server speaks SDK (+y = right). With the default
-    rover_speed_y_sign=-1 a strafe-left command must move the rover left."""
+    """Manager and rover server both say +y = left, so with the default rover_speed_y_sign=1
+    a strafe-left command must move the rover left."""
     ctx, world, *_ = stack
     y0 = world.rover[1]
     ctx.rover.speed(0.0, 0.2, 0.0, 1.0)
@@ -65,7 +65,7 @@ def test_speed_sign_convention_survives_the_wire(stack):
 
 def test_wrong_sign_config_would_drive_the_wrong_way(stack):
     ctx, world, *_ = stack
-    flipped = RoverHttp(ctx.rover.http.base, dataclasses.replace(ctx.cfg, rover_speed_y_sign=1.0))
+    flipped = RoverHttp(ctx.rover.http.base, dataclasses.replace(ctx.cfg, rover_speed_y_sign=-1.0))
     y0 = world.rover[1]
     flipped.speed(0.0, 0.2, 0.0, 1.0)
     assert world.rover[1] < y0                                                # proves the config knob matters

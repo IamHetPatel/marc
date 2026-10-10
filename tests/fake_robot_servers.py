@@ -1,8 +1,8 @@
 """Fake rover (:8000) and drone (:8001) HTTP servers backed by the mock world.
 
 They speak the protocol the rover/drone squads must implement (docs/ai-manager-plan.md §10), so the real
-RoverHttp / DroneHttp clients can be tested over actual sockets. The rover server deliberately uses the
-RoboMaster SDK convention for /speed (+y = RIGHT) to prove the sign handling end to end.
+RoverHttp / DroneHttp clients can be tested over actual sockets. Like rover/robot_server.py, the fake rover takes
+y = LEFT on /speed; speed_right_positive=True mimics a server that passes raw SDK signs (+y = right) through.
 """
 import socket
 import threading
@@ -12,7 +12,7 @@ import uvicorn
 from fastapi import FastAPI, Response
 
 
-def rover_app(rover, *, speed_right_positive=True, hang=None):
+def rover_app(rover, *, speed_right_positive=False, hang=None):
     app = FastAPI()
 
     @app.get("/pose")

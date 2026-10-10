@@ -1,263 +1,397 @@
+"""Drone server (:8001): wraps cflib for the scout Crazyflie (flies) and an optional target Crazyflie
+(sits on the floor and only reports its Lighthouse pose). Contract: docs/mothership-plan.md §4.2.
+
+Every flight command goes through the high-level commander with a computed duration, and every wait is
+sliced so /land (from another request thread) can cut in at any moment: it bumps an abort generation,
+sends land, and returns at once. Motion calls that see a newer generation stop and send nothing more.
+
+Env:
+  SCOUT_URI   radio URI of the flying drone (default: the one confirmed by cfclient)
+  TARGET_URI  radio URI of the floor drone; empty = /pose?cf=target answers {"ok": false}
+  CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: drone_cage from manager/arena.json)
+  MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y"
+"""
+import json
+import math
 import os
-import time
 import threading
-from flask import Flask, request, jsonify
+import time
+from pathlib import Path
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 MOCK = os.getenv("MOCK", "0") == "1"
+MOCK_TIME_SCALE = float(os.getenv("MOCK_TIME_SCALE", "10"))  # mock flights take real duration / this
 
-URI = "radio://0/80/2M/E7E7E7E704"  # confirmed by cfclient (address ends in 04)
-FLY_Z = 0.6   # Default flight height in metres
-DOCK_Z = 0.27 # Plate height from arena.json plate_offset.dock_z
-DIP_M = 0.12  # zrange dip (metres) to detect an object below
+SCOUT_URI = os.getenv("SCOUT_URI", "radio://0/80/2M/E7E7E7E704")  # confirmed by cfclient (address ends in 04)
+TARGET_URI = os.getenv("TARGET_URI", "")
+FLY_Z = 0.6          # default flight height (m)
+DOCK_Z = 0.27        # plate height, arena.json plate_offset.dock_z
+DIP_M = 0.12         # zrange dip below the floor median that counts as "something here"
+SPEED = 0.3          # m/s for go_to durations (spec: <= 0.4)
+LANE_M = 0.4         # lawnmower lane spacing
+MIN_BATTERY_V = 3.3  # refuse takeoff below this
+POSE_STALE_S = 1.0   # no log packet for this long = pose not trustworthy
 
-# --- Mock state ---
-mock_pose = {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "battery_v": 4.0, "state": "docked"}
 
-# --- Real drone state ---
-scf = None
-pc = None
-drone_pose   = {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0}
-drone_battery_v = 4.0          # updated by log callback
-drone_state  = "docked"        # "docked" | "flying" | "landed"
-takeoff_pos  = {"x": 0.0, "y": 0.0}  # saved at takeoff → used by /dock
-zrange_samples = []
-stop_flag = False
+def _load_cage():
+    if os.getenv("CAGE"):
+        x0, y0, x1, y1, zmax = (float(v) for v in os.environ["CAGE"].split(","))
+        return {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "z_max": zmax}
+    try:
+        return json.loads((Path(__file__).parent / "manager" / "arena.json").read_text())["drone_cage"]
+    except (OSError, KeyError, ValueError):
+        return {"x0": 0.0, "y0": 0.0, "x1": 4.0, "y1": 3.0, "z_max": 1.2}
+
+
+CAGE = _load_cage()
+
+
+def _outside_cage(x, y, z=None):
+    """Error string if the point is outside the geofence, else None."""
+    if not (CAGE["x0"] <= x <= CAGE["x1"] and CAGE["y0"] <= y <= CAGE["y1"]):
+        return (f"({x:.2f}, {y:.2f}) is outside the cage x {CAGE['x0']}..{CAGE['x1']}, "
+                f"y {CAGE['y0']}..{CAGE['y1']} (set CAGE env if the frame differs)")
+    if z is not None and not 0.1 <= z <= CAGE["z_max"]:
+        return f"z={z:.2f} is outside 0.1..{CAGE['z_max']}"
+    return None
+
+
+class Link:
+    """One Crazyflie radio link with a 10 Hz state log."""
+
+    def __init__(self, uri: str, with_zrange: bool):
+        self.uri = uri
+        self.pose = {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0}
+        self.battery_v = None
+        self.last_log = 0.0
+        self.zrange = []          # (x, y, metres) samples, collected only while a scan is recording
+        self.recording = False
+        self.scf = None
+        self.error = None
+        if not MOCK:
+            self._connect(with_zrange)
+
+    def _connect(self, with_zrange):
+        from cflib.crazyflie import Crazyflie
+        from cflib.crazyflie.log import LogConfig
+        from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
+
+        print(f"Connecting to {self.uri}...")
+        self.scf = SyncCrazyflie(self.uri, cf=Crazyflie(rw_cache="./cache"))
+        self.scf.open_link()
+        print(f"Connected to {self.uri}")
+        lg = LogConfig(name="state", period_in_ms=100)
+        for var in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z", "stateEstimate.yaw", "pm.vbat"):
+            lg.add_variable(var, "float")
+        if with_zrange:
+            lg.add_variable("range.zrange", "uint16_t")
+        lg.data_received_cb.add_callback(self._on_log)
+        self.scf.cf.log.add_config(lg)
+        lg.start()
+
+    def _on_log(self, _ts, data, _conf):
+        self.pose["x"] = data["stateEstimate.x"]
+        self.pose["y"] = data["stateEstimate.y"]
+        self.pose["z"] = data["stateEstimate.z"]
+        self.pose["yaw"] = data["stateEstimate.yaw"]
+        self.battery_v = round(data["pm.vbat"], 2)
+        self.last_log = time.monotonic()
+        if self.recording and "range.zrange" in data:
+            self.zrange.append((self.pose["x"], self.pose["y"], data["range.zrange"] / 1000.0))
+
+    def age_s(self):
+        return None if not self.last_log else round(time.monotonic() - self.last_log, 2)
+
+    def snapshot(self, state):
+        out = {"ok": True, "x": round(self.pose["x"], 3), "y": round(self.pose["y"], 3),
+               "z": round(self.pose["z"], 3), "yaw": round(self.pose["yaw"], 1),
+               "battery_v": self.battery_v, "state": state}
+        if not MOCK:
+            age = self.age_s()
+            out["age_s"] = age
+            if age is None or age > POSE_STALE_S:
+                out.update(ok=False, error=f"no pose from {self.uri} for {age}s")
+        return out
+
+
+class Scout:
+    """The flying drone. One motion command at a time; /land preempts whatever is running."""
+
+    def __init__(self, link: Link):
+        self.link = link
+        self.state = "landed"                 # landed | flying (docked after /dock)
+        self.takeoff_pos = None               # where /dock returns to
+        self.busy = threading.Lock()          # held by takeoff/goto/scan/dock
+        self.gen = 0                          # bumped by /land; stale motion stops
+        self.gen_lock = threading.Lock()
+        if not MOCK:
+            from cflib.utils.reset_estimator import reset_estimator
+            reset_estimator(link.scf)
+            self.hlc = link.scf.cf.high_level_commander
+        else:
+            self.link.pose.update(x=CAGE["x0"], y=CAGE["y0"])
+            self.link.battery_v = 4.0
+
+    def _cur_gen(self):
+        with self.gen_lock:
+            return self.gen
+
+    def _wait(self, seconds, gen):
+        """Sleep in slices; False if /land interrupted."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if self._cur_gen() != gen:
+                return False
+            time.sleep(0.05)
+        return self._cur_gen() == gen
+
+    def _arm(self):
+        try:                                   # Brushless; harmless on older firmware
+            self.link.scf.cf.supervisor.send_arming_request(True)
+            time.sleep(1.0)
+        except Exception as e:                 # noqa: BLE001
+            print(f"Arming request failed (continuing): {e}")
+
+    def _takeoff(self, z, gen):
+        if self.state == "flying":
+            return None
+        if self.link.battery_v is not None and self.link.battery_v < MIN_BATTERY_V:
+            return f"battery {self.link.battery_v} V is below {MIN_BATTERY_V} V"
+        self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
+        print(f"Taking off from {self.takeoff_pos} to z={z}")
+        if MOCK:
+            self.link.pose["z"] = z
+            self.state = "flying"
+            return None
+        self._arm()
+        if self._cur_gen() != gen:             # /land arrived while arming
+            return "interrupted by land"
+        duration = max(2.0, z / SPEED)
+        self.hlc.takeoff(z, duration)
+        self.state = "flying"
+        if not self._wait(duration + 0.3, gen):
+            return "interrupted by land"
+        return None
+
+    def _goto(self, x, y, z, gen):
+        p = self.link.pose
+        dist = math.dist((p["x"], p["y"], p["z"]), (x, y, z))
+        duration = max(1.0, dist / SPEED)
+        if self._cur_gen() != gen:
+            return "interrupted by land"
+        if MOCK:
+            if not self._wait(duration / MOCK_TIME_SCALE, gen):
+                return "interrupted by land"
+            p.update(x=x, y=y, z=z)
+            return None
+        self.hlc.go_to(x, y, z, 0.0, duration, relative=False)
+        if not self._wait(duration + 0.2, gen):
+            return "interrupted by land"
+        return None
+
+    def _motion(self, fn):
+        """Run fn(gen) under the busy lock; refuse if another motion is running."""
+        if not self.busy.acquire(blocking=False):
+            return {"ok": False, "error": "busy: another flight command is running (use /land to abort)"}
+        try:
+            return fn(self._cur_gen())
+        finally:
+            self.busy.release()
+
+    # ── commands ─────────────────────────────────────────────────────────────
+
+    def takeoff(self, z):
+        if not 0.1 <= z <= CAGE["z_max"]:
+            return {"ok": False, "error": f"z={z:.2f} is outside 0.1..{CAGE['z_max']}"}
+
+        def run(gen):
+            err = self._takeoff(z, gen)
+            return {"ok": False, "error": err, "pose": self.pose()} if err else {"ok": True, "pose": self.pose()}
+        return self._motion(run)
+
+    def goto(self, x, y, z):
+        if (err := _outside_cage(x, y, z)):
+            return {"ok": False, "error": err}
+        if self.state != "flying":
+            return {"ok": False, "error": "not flying: call /takeoff first"}
+
+        def run(gen):
+            err = self._goto(x, y, z, gen)
+            return {"ok": False, "error": err, "pose": self.pose()} if err else {"ok": True, "pose": self.pose()}
+        return self._motion(run)
+
+    def scan(self, x0, y0, x1, y1):
+        lx, hx, ly, hy = min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1)
+        for cx, cy in ((lx, ly), (hx, hy)):
+            if (err := _outside_cage(cx, cy)):
+                return {"ok": False, "error": err, "findings": []}
+        pts, cy, flip = [], ly, False
+        while cy <= hy + 1e-6:
+            pts += [(hx, cy), (lx, cy)] if flip else [(lx, cy), (hx, cy)]
+            cy, flip = cy + LANE_M, not flip
+
+        def run(gen):
+            if (err := self._takeoff(FLY_Z, gen)):
+                return {"ok": False, "error": err, "findings": []}
+            print(f"Scanning {len(pts)} waypoints over ({lx},{ly})-({hx},{hy})")
+            self.link.zrange.clear()
+            self.link.recording = True
+            try:
+                for px, py in pts:
+                    if (err := self._goto(px, py, FLY_Z, gen)):
+                        return {"ok": False, "error": err, "findings": []}
+            finally:
+                self.link.recording = False
+            if MOCK:
+                f = {"id": "f1", "x": round((lx + hx) / 2, 2), "y": round((ly + hy) / 2, 2), "dz": 0.15, "by": "mock"}
+                return {"ok": True, "findings": [f]}
+            return {"ok": True, "findings": _zrange_findings(self.link.zrange, self.link.uri)}
+        return self._motion(run)
+
+    def dock(self):
+        if self.state != "flying":
+            return {"ok": True, "docked": self.state == "docked", "state": self.state}
+        if self.takeoff_pos is None:
+            return {"ok": False, "docked": False, "error": "no takeoff position recorded"}
+
+        def run(gen):
+            tx, ty = self.takeoff_pos["x"], self.takeoff_pos["y"]
+            print(f"Docking: back to ({tx}, {ty}) at z={DOCK_Z}")
+            if (err := self._goto(tx, ty, DOCK_Z, gen)):
+                return {"ok": False, "docked": False, "error": err}
+            self._send_land(duration=DOCK_Z / 0.15)
+            self._wait(DOCK_Z / 0.15 + 0.3, gen)
+            self.state = "docked"
+            return {"ok": True, "docked": True, "pose": self.pose()}
+        return self._motion(run)
+
+    def land(self):
+        """Preempt any running motion and land in place. Returns immediately."""
+        with self.gen_lock:
+            self.gen += 1
+        if self.state != "flying":
+            return {"ok": True, "state": self.state}
+        print("Landing in place")
+        self._send_land(duration=2.0)
+        self.state = "landed"
+        return {"ok": True, "state": "landed"}
+
+    def _send_land(self, duration):
+        if MOCK:
+            self.link.pose["z"] = 0.0
+            return
+        self.hlc.land(0.0, duration)
+
+        def stop_after():
+            time.sleep(duration + 0.5)
+            self.hlc.stop()
+        threading.Thread(target=stop_after, daemon=True).start()
+
+    def pose(self):
+        return self.link.snapshot(self.state)
+
+
+def _zrange_findings(samples, by):
+    """One hit: the centroid of samples that dip more than DIP_M below the median floor distance."""
+    if not samples:
+        return []
+    base = sorted(s[2] for s in samples)[len(samples) // 2]
+    blob = [s for s in samples if base - s[2] > DIP_M]
+    if not blob:
+        return []
+    hit = {"id": "f1", "x": round(sum(s[0] for s in blob) / len(blob), 2),
+           "y": round(sum(s[1] for s in blob) / len(blob), 2),
+           "dz": round(base - min(s[2] for s in blob), 3), "by": by}
+    print(f"Found object at ({hit['x']}, {hit['y']}), dz={hit['dz']} m")
+    return [hit]
+
+
+# ── startup ──────────────────────────────────────────────────────────────────
 
 if not MOCK:
     import cflib.crtp
-    from cflib.crazyflie import Crazyflie
-    from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
-    from cflib.positioning.position_hl_commander import PositionHlCommander
-    from cflib.crazyflie.log import LogConfig
-    from cflib.utils.reset_estimator import reset_estimator
-
     print("Initializing cflib drivers...")
     cflib.crtp.init_drivers()
-    print(f"Connecting to {URI}...")
-    scf = SyncCrazyflie(URI, cf=Crazyflie(rw_cache="./cache"))
-    scf.open_link()
-    print("Connected!")
 
-    reset_estimator(scf)
-
-    # Arming request (Brushless Crazyflie 2.1 — firmware v10 uses legacy fallback)
+scout = Scout(Link(SCOUT_URI, with_zrange=True))
+target = None
+if MOCK:
+    target = Link("mock-target", with_zrange=False)
+    tx, ty = (float(v) for v in os.getenv("MOCK_TARGET", "2.4,1.1").split(","))
+    target.pose.update(x=tx, y=ty)
+    target.battery_v = 4.0
+elif TARGET_URI:
     try:
-        scf.cf.supervisor.send_arming_request(True)
-        time.sleep(1.0)
-    except Exception:
-        pass
-
-    def _log_cb(timestamp, data, logconf):
-        global drone_battery_v
-        drone_pose["x"]   = data.get("stateEstimate.x",   drone_pose["x"])
-        drone_pose["y"]   = data.get("stateEstimate.y",   drone_pose["y"])
-        drone_pose["z"]   = data.get("stateEstimate.z",   drone_pose["z"])
-        drone_pose["yaw"] = data.get("stateEstimate.yaw", drone_pose["yaw"])
-        if "pm.vbat" in data:
-            drone_battery_v = round(data["pm.vbat"], 2)
-        if "range.zrange" in data:
-            zrange_samples.append((drone_pose["x"], drone_pose["y"],
-                                   data["range.zrange"] / 1000.0))
-
-    lg = LogConfig(name="state", period_in_ms=100)
-    lg.add_variable("stateEstimate.x",   "float")
-    lg.add_variable("stateEstimate.y",   "float")
-    lg.add_variable("stateEstimate.z",   "float")
-    lg.add_variable("stateEstimate.yaw", "float")
-    lg.add_variable("pm.vbat",           "float")   # battery voltage
-    lg.add_variable("range.zrange",      "uint16_t") # mm → object detection
-    lg.data_received_cb.add_callback(_log_cb)
-    scf.cf.log.add_config(lg)
-    lg.start()
+        target = Link(TARGET_URI, with_zrange=False)
+    except Exception as e:                    # noqa: BLE001  the scout must still fly without the target
+        print(f"Target {TARGET_URI} not reachable: {e}")
+        target = None
+print(f"Geofence: {CAGE}")
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── endpoints ────────────────────────────────────────────────────────────────
 
-def _full_pose():
-    """Return the full pose dict the AI Manager expects."""
-    if MOCK:
-        return mock_pose.copy()
-    return {
-        "x":         round(drone_pose["x"],   3),
-        "y":         round(drone_pose["y"],   3),
-        "z":         round(drone_pose["z"],   3),
-        "yaw":       round(drone_pose["yaw"], 1),
-        "battery_v": drone_battery_v,
-        "state":     drone_state,
-    }
+def _f(name, default):
+    return float(request.args.get(name, default))
 
 
-# ── endpoints ─────────────────────────────────────────────────────────────────
-
-@app.route("/takeoff")
-def takeoff():
-    """Take off from the current position (= the plate). Saves the position for /dock."""
-    global pc, stop_flag, drone_state, takeoff_pos
-    stop_flag = False
-
-    if MOCK:
-        mock_pose["z"]     = FLY_Z
-        mock_pose["state"] = "flying"
-        print(f"[MOCK] Took off to z={FLY_Z}m")
-        return jsonify({"status": "mock_ok", "pose": _full_pose()})
-
-    if pc is None:
-        # Save the current x,y so /dock can return here (= plate on the rover)
-        takeoff_pos = {"x": round(drone_pose["x"], 3), "y": round(drone_pose["y"], 3)}
-        print(f"Taking off from {takeoff_pos}...")
-        pc = PositionHlCommander(scf, default_height=FLY_Z, default_velocity=0.3)
-        pc.take_off(height=FLY_Z, velocity=0.5)
-        drone_state = "flying"
-    return jsonify({"status": "ok", "pose": _full_pose()})
+@app.errorhandler(Exception)
+def _on_error(e):
+    print(f"ERROR {request.path}: {e!r}")
+    return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
-@app.route("/land")
-def land():
-    """Land in place (emergency fallback — use /dock to return to plate)."""
-    global pc, stop_flag, drone_state
-    stop_flag = True   # also aborts any running /scan
-
-    if MOCK:
-        mock_pose["z"]     = 0.0
-        mock_pose["state"] = "landed"
-        print("[MOCK] Landed in place.")
-        return jsonify({"status": "mock_ok"})
-
-    if pc is not None:
-        print("Landing in place...")
-        pc.land(velocity=0.5)
-        pc = None
-        drone_state = "landed"
-    return jsonify({"status": "ok"})
-
-
-@app.route("/goto")
-def goto():
-    """Fly to an absolute coordinate in the Lighthouse frame."""
-    global pc, stop_flag, drone_state
-    stop_flag = False
-    x = float(request.args.get("x", mock_pose["x"] if MOCK else drone_pose["x"]))
-    y = float(request.args.get("y", mock_pose["y"] if MOCK else drone_pose["y"]))
-    z = float(request.args.get("z", FLY_Z))
-
-    if MOCK:
-        mock_pose.update({"x": x, "y": y, "z": z, "state": "flying"})
-        print(f"[MOCK] Flew to x={x}, y={y}, z={z}")
-        return jsonify({"status": "mock_ok", "pose": _full_pose()})
-
-    if pc is None:
-        takeoff_pos.update({"x": round(drone_pose["x"], 3), "y": round(drone_pose["y"], 3)})
-        pc = PositionHlCommander(scf, default_height=FLY_Z, default_velocity=0.3)
-        pc.take_off(height=FLY_Z, velocity=0.5)
-        drone_state = "flying"
-
-    print(f"Flying to ({x}, {y}, {z})...")
-    pc.go_to(x, y, z)
-    return jsonify({"status": "ok", "pose": _full_pose()})
-
-
-@app.route("/scan")
-def scan():
-    """Lawnmower sweep, returns findings in the format the AI Manager expects."""
-    global pc, stop_flag, drone_state
-    stop_flag = False
-    x0 = float(request.args.get("x0", 0.0))
-    y0 = float(request.args.get("y0", 0.0))
-    x1 = float(request.args.get("x1", 2.0))
-    y1 = float(request.args.get("y1", 2.0))
-
-    if MOCK:
-        mid_x = round((x0 + x1) / 2, 2)
-        mid_y = round((y0 + y1) / 2, 2)
-        print(f"[MOCK] Scanned ({x0},{y0})→({x1},{y1}). Hit at ({mid_x},{mid_y})")
-        return jsonify({
-            "status": "mock_ok",
-            # AI Manager expects "findings" with id, x, y, dz
-            "findings": [{"id": "f1", "x": mid_x, "y": mid_y, "dz": 0.15, "by": "mock"}]
-        })
-
-    if pc is None:
-        takeoff_pos.update({"x": round(drone_pose["x"], 3), "y": round(drone_pose["y"], 3)})
-        pc = PositionHlCommander(scf, default_height=FLY_Z, default_velocity=0.3)
-        pc.take_off(height=FLY_Z, velocity=0.5)
-        drone_state = "flying"
-
-    # Build lawnmower path (0.4 m lanes)
-    pts, cy, flip = [], min(y0, y1), False
-    while cy <= max(y0, y1) + 1e-6:
-        a = min(x0, x1) if not flip else max(x0, x1)
-        b = max(x0, x1) if not flip else min(x0, x1)
-        pts += [(a, cy), (b, cy)]
-        cy, flip = cy + 0.4, not flip
-
-    print(f"Scanning {len(pts)} waypoints...")
-    zrange_samples.clear()
-
-    for px, py in pts:
-        if stop_flag:
-            print("Scan aborted by stop flag!")
-            if pc:
-                pc.land(velocity=0.5)
-                pc = None
-                drone_state = "landed"
-            return jsonify({"status": "aborted", "findings": []})
-        pc.go_to(px, py, FLY_Z)
-
-    if pc:
-        pc.land(velocity=0.5)
-        pc = None
-        drone_state = "landed"
-
-    if not zrange_samples:
-        return jsonify({"status": "ok", "findings": []})
-
-    # Detect objects by Z-range dip below the median (floor distance)
-    base = sorted(s[2] for s in zrange_samples)[len(zrange_samples) // 2]
-    blob = [s for s in zrange_samples if base - s[2] > DIP_M]
-
-    findings = []
-    if blob:
-        hit_x = round(sum(s[0] for s in blob) / len(blob), 2)
-        hit_y = round(sum(s[1] for s in blob) / len(blob), 2)
-        dz    = round(base - min(s[2] for s in blob), 3)  # how high the object is
-        findings.append({"id": "f1", "x": hit_x, "y": hit_y, "dz": dz, "by": URI})
-        print(f"Found object at ({hit_x}, {hit_y}), dz={dz}m")
-
-    return jsonify({"status": "ok", "findings": findings})
-
-
-@app.route("/dock")
-def dock():
-    """Return to the saved takeoff position (the plate on the rover) and land."""
-    global pc, stop_flag, drone_state
-    stop_flag = True   # abort any running scan
-
-    if MOCK:
-        mock_pose.update({"x": 0.0, "y": 0.0, "z": DOCK_Z, "state": "docked"})
-        print("[MOCK] Drone docked on plate.")
-        return jsonify({"status": "mock_ok", "docked": True})
-
-    if pc is None:
-        drone_state = "docked"
-        return jsonify({"status": "already_docked", "docked": True})
-
-    tx, ty = takeoff_pos["x"], takeoff_pos["y"]
-    print(f"Docking: returning to takeoff pos ({tx}, {ty}) at z={DOCK_Z}...")
-    pc.go_to(tx, ty, DOCK_Z)     # descend to plate height first
-    pc.land(velocity=0.3)        # slow land onto the plate
-    pc = None
-    drone_state = "docked"
-    return jsonify({"status": "ok", "docked": True, "pose": _full_pose()})
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "mock": MOCK, "cage": CAGE,
+                    "scout": scout.link.snapshot(scout.state).get("error") or "connected",
+                    "target": ("connected" if target else "none") if not target or MOCK
+                    else target.snapshot("landed").get("error") or "connected"})
 
 
 @app.route("/pose")
 def pose():
-    """Full pose including battery_v and state — as required by the AI Manager."""
-    return jsonify(_full_pose())
+    """?cf=scout|target. {ok, x, y, z, yaw, battery_v, state}."""
+    if request.args.get("cf", "scout") == "target":
+        if target is None:
+            return jsonify({"ok": False, "error": "no target drone"})
+        return jsonify(target.snapshot("landed"))
+    return jsonify(scout.pose())
+
+
+@app.route("/takeoff")
+def takeoff():
+    return jsonify(scout.takeoff(_f("z", FLY_Z)))
+
+
+@app.route("/goto")
+def goto():
+    """Absolute x, y, z in the Lighthouse frame. Blocks until arrival or /land."""
+    p = scout.link.pose
+    return jsonify(scout.goto(_f("x", p["x"]), _f("y", p["y"]), _f("z", FLY_Z)))
+
+
+@app.route("/scan")
+def scan():
+    """Lawnmower sweep at FLY_Z; the drone keeps hovering afterwards (call /land or /dock)."""
+    return jsonify(scout.scan(_f("x0", CAGE["x0"]), _f("y0", CAGE["y0"]), _f("x1", CAGE["x1"]), _f("y1", CAGE["y1"])))
+
+
+@app.route("/land")
+def land():
+    """Land in place. Returns immediately and aborts any running /goto, /scan or /dock."""
+    return jsonify(scout.land())
+
+
+@app.route("/dock")
+def dock():
+    """Fly back to the takeoff spot and land slowly on the plate."""
+    return jsonify(scout.dock())
 
 
 if __name__ == "__main__":
     print(f"Starting Drone Server (MOCK={MOCK}) on port 8001...")
-    # threaded=True lets /land interrupt a blocking /scan
+    # threaded=True so /land can cut into a blocking /goto or /scan
     app.run(host="0.0.0.0", port=8001, threaded=True, debug=False, use_reloader=False)

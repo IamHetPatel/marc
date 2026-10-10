@@ -37,8 +37,9 @@ PORT = int(os.getenv("PORT", "8001"))
 
 # Measured 2026-10-10 by walking the scout to the cage corners (Lighthouse frame, origin inside the cage):
 # (2.06, -0.71), (1.96, 1.18), (-1.35, 1.48); the fourth corner read garbage (tracking lost), to re-measure.
-# Default = the overlap of those corners, 0.3 m in from each wall.
-DEFAULT_CAGE = "-1.05,-0.41,1.66,0.88,1.2"
+# The field is 5 m x 3 m, assumed centred on the Lighthouse origin (x -2.5..2.5, y -1.5..1.5); the default is
+# 0.3 m in from each wall. Keep equal to manager/arena.floor.json drone_cage (tests/test_integration.py checks).
+DEFAULT_CAGE = "-2.2,-1.2,2.2,1.2,1.2"
 SANE_MARGIN_M = 1.5  # a pose this far outside the cage means Lighthouse tracking is lost, not a real position
 TAKEOFF_MARGIN_M = 0.3  # takeoff is a vertical lift, so it may start up to the measured walls (the cage is inset 0.3 m)
 

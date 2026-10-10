@@ -1,34 +1,131 @@
 {
-  "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. MEASURED: the net corners and the drone cage (drone squad, 2026-10-10, scout walked to the corners: (2.06,-0.71), (1.96,1.18), (-1.35,1.48); the 4th corner lost tracking, about (-1.25,-0.41) by symmetry). The drone cage is drone_server.py's DEFAULT_CAGE. PROVISIONAL until F1: bounds (net minus 0.1 m, widened to contain the drone cage), zones, home, overhead tags and camera position. Move them on the floor with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
+  "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. FIELD: 5 m (x) by 3 m (y), assumed centred on the Lighthouse origin (which is inside the net): x -2.5..2.5, y -1.5..1.5. CHECK on the floor: put a Crazyflie in two opposite corners and read its pose; if the field is shifted or the long side runs along y, change bounds, drone_cage, zones and home here AND drone_server.py DEFAULT_CAGE (tests/test_integration.py keeps the two cages equal). drone_cage = bounds 0.3 m in from each wall. Zones, home, launch pad and overhead tags are provisional; measure them with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
   "calibrated": false,
-  "_view_note": "view = what the dashboard map shows: the measured net corners (2.06,-0.71) (1.96,1.18) (-1.35,1.48) plus a margin, so a scout or rover outside the arena stays visible (the map also grows by itself). launch_pad = where the scout sits before takeoff; the drone server reports the real one (its first takeoff spot) once it has flown, so this is only the pre-flight guess. Measure it with the wand and fill it in.",
-  "view": {"x0": -1.6, "y0": -1.0, "x1": 2.3, "y1": 1.75},
-  "launch_pad": null,
-  "bounds": {"x0": -1.15, "y0": -0.41, "x1": 1.86, "y1": 1.08},
-  "drone_cage": {"x0": -1.05, "y0": -0.41, "x1": 1.66, "y1": 0.88, "z_max": 1.2},
-  "home": {"x": -0.8, "y": 0.75, "yaw": 0.0},
-  "plate_offset": {"x": 0.0, "y": 0.0, "yaw": 0.0, "dock_z": 0.27},
-  "zones": {
-    "base":      {"rect": [-1.15, 0.4, -0.45, 1.08]},
-    "disposal":  {"rect": [-1.15, -0.41, -0.45, 0.3]},
-    "field_a":   {"rect": [-0.35, -0.41, 0.65, 0.88]},
-    "field_b":   {"rect": [0.65, -0.41, 1.66, 0.88]},
-    "test_zone": {"rect": [-1.05, -0.41, 1.66, 0.88]}
+  "_view_note": "view = what the dashboard map shows: the 5 x 3 m field plus a 0.4 m margin (the map also grows by itself if a robot or the pad is outside). launch_pad = where the scout sits before takeoff; the drone server reports the real one (its first takeoff spot) once it has flown. Measure it and fill it in.",
+  "view": {
+    "x0": -2.9,
+    "y0": -1.9,
+    "x1": 2.9,
+    "y1": 1.9
   },
-  "camera": {"width": 640, "height": 360, "fov_deg": 70.0, "grip_line_row": 300, "deadband_px": 40},
+  "launch_pad": null,
+  "bounds": {
+    "x0": -2.5,
+    "y0": -1.5,
+    "x1": 2.5,
+    "y1": 1.5
+  },
+  "drone_cage": {
+    "x0": -2.2,
+    "y0": -1.2,
+    "x1": 2.2,
+    "y1": 1.2,
+    "z_max": 1.2
+  },
+  "home": {
+    "x": -2.1,
+    "y": 0.9,
+    "yaw": 0.0
+  },
+  "plate_offset": {
+    "x": 0.0,
+    "y": 0.0,
+    "yaw": 0.0,
+    "dock_z": 0.27
+  },
+  "zones": {
+    "base": {
+      "rect": [
+        -2.5,
+        0.3,
+        -1.5,
+        1.5
+      ]
+    },
+    "disposal": {
+      "rect": [
+        -2.5,
+        -1.5,
+        -1.5,
+        -0.3
+      ]
+    },
+    "field_a": {
+      "rect": [
+        -1.3,
+        -1.5,
+        0.6,
+        1.5
+      ]
+    },
+    "field_b": {
+      "rect": [
+        0.6,
+        -1.5,
+        2.5,
+        1.5
+      ]
+    },
+    "test_zone": {
+      "rect": [
+        -2.2,
+        -1.2,
+        2.2,
+        1.2
+      ]
+    }
+  },
+  "camera": {
+    "width": 640,
+    "height": 360,
+    "fov_deg": 70.0,
+    "grip_line_row": 300,
+    "deadband_px": 40
+  },
   "overhead": {
     "_note": "PLACEHOLDER. Railing camera above one edge of the net, looking down at an angle. ArUco tags 0-3 (DICT_4X4_50) flat on the floor just outside the net corners; enter their measured centres. camera_floor_xy = the floor point straight below the lens (it may be outside the net), camera_height_m = lens height above the floor.",
     "dictionary": "DICT_4X4_50",
     "camera_height_m": 4.0,
-    "camera_floor_xy": [0.3, -1.6],
-    "floor_tags": {"0": [-1.4, -0.75], "1": [2.15, -0.75], "2": [2.05, 1.55], "3": [-1.45, 1.55]},
+    "camera_floor_xy": [
+      0.0,
+      -2.6
+    ],
+    "floor_tags": {
+      "0": [
+        -2.7,
+        -1.7
+      ],
+      "1": [
+        2.7,
+        -1.7
+      ],
+      "2": [
+        2.7,
+        1.7
+      ],
+      "3": [
+        -2.7,
+        1.7
+      ]
+    },
     "rover_tag_id": 10,
     "rover_tag_height_m": 0.3,
-    "rover_tag_offset_m": [0.0, 0.0],
+    "rover_tag_offset_m": [
+      0.0,
+      0.0
+    ],
     "rover_tag_yaw_offset_deg": 0.0,
     "max_age_s": 0.5
   },
   "mock_objects": [
-    {"label": "crashed drone", "kind": "hostile_drone", "x": 0.2, "y": 0.3, "height": 0.05, "grippable": true, "color": "#c0392b"}
+    {
+      "label": "crashed drone",
+      "kind": "hostile_drone",
+      "x": 0.2,
+      "y": 0.3,
+      "height": 0.05,
+      "grippable": true,
+      "color": "#c0392b"
+    }
   ]
 }

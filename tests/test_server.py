@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from manager.server import create_app
 
-from .conftest import decision, draft, scripted
 
 
 @pytest.fixture

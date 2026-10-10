@@ -10,7 +10,6 @@ call can never overwrite newer state.
 import dataclasses
 import logging
 import threading
-import time
 from typing import Optional
 
 from .adapters.base import RobotError

@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from manager.config import Config
 from manager.llm import GeminiLLM, LLMError, ScriptedLLM, call_with_timeout
 from manager.models import SupervisorDecision
 

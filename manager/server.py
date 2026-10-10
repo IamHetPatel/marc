@@ -55,9 +55,9 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         try:
             return fn(*args)
         except Conflict as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise HTTPException(status_code=422, detail=str(e)) from e
 
     @app.get("/state")
     def state():

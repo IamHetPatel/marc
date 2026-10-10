@@ -4,7 +4,6 @@ import dataclasses
 import pytest
 
 from manager.adapters.base import RobotError
-from manager.config import Config
 from manager.runtime import build_ctx
 from manager.tools import (REGISTRY, UnresolvedRef, check_refs, resolve_location, run_action, succeeded,
                            validate_step, vocabulary_text)

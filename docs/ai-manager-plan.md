@@ -399,4 +399,5 @@ Cost: each VLM call takes roughly 1–3 s, so an approach is 5–10 calls. That 
 - **Mixed mode (real rover + mock drone):** a mock drone's "docked" pose is *not* used as the rover's fix (it would claim the rover never moves), so the rover falls back to start cross + odometry.
 - **Mock perception is ground truth** read from the mock world (same projection that renders the image), so the grip-line loop is exercised for real; set `PERCEPTION=gemini` to send the synthetic frames to Gemini instead (not meaningful until we have the Saturday phone photos, §12).
 - **`/state` additions** beyond the §9 example (additive, allowed): `mission.reason`, `mission.pending_question`, `mission.error`, `previous_plan` (for the side-by-side), `log`.
+- **No auth on `:8002`** and CORS is open: anyone on the venue Wi-Fi can approve or stop. Fine for the hackathon (the dashboard runs on another laptop); put a token in front before any other use.
 - **Not built yet:** mid-scan battery recall (the drone server owns the flight; we only refuse to launch below `DRONE_MIN_V`), metrics script (§13), Saturday photo set (§12).

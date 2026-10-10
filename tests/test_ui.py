@@ -89,6 +89,13 @@ def view(page, name):
     page.wait_for_selector(f"#view-{name}", state="visible")
 
 
+def fold(page, name, open=True):
+    """Open (or close) one of the panels beside the map."""
+    if page.locator(f"#fold-{name}").evaluate("e => e.classList.contains('folded')") == open:
+        page.click(f"#fold-{name} .fold-head")
+    page.wait_for_selector(f"#fold-body-{name}", state="visible" if open else "hidden")
+
+
 def start_over(page, server):
     """Back to an idle, empty screen; 'Start over' is disabled when there is nothing to start over from."""
     if server.state()["mission"]["id"] is not None:
@@ -143,18 +150,26 @@ def test_the_theme_toggle_flips_and_remembers(page):
     page.wait_for_timeout(450)
 
 
-def test_the_sections_switch_and_the_page_remembers(page, server):
-    """Four sections, one visible at a time; the start screen sells the product with the use cases."""
+def test_everything_live_is_on_one_page_and_the_panels_fold(page, server):
+    """The map, the steps, the camera, the robots and hands-on control share the Mission page (no page switching while
+    driving); each panel folds and the choice is remembered. Evidence is the only other page."""
     assert page.locator("#start-panel").is_visible() and page.locator("#start-list .usecase").count() >= 5
     assert "Send robots" in page.inner_text("#start-panel")
     assert page.locator("#phases li").count() == 8                                          # the story, before any mission
-    for name in ("plan", "fleet", "evidence", "mission"):
-        view(page, name)
-        assert page.get_attribute(f"[data-view={name}]", "aria-selected") == "true"
-        assert sum(page.locator(f"#view-{v}").is_visible() for v in ("mission", "plan", "fleet", "evidence")) == 1
-    view(page, "fleet")
+    assert page.locator(".vtab").count() == 2
+    for name in ("steps", "camera", "robots", "manual"):
+        assert page.locator(f"#view-mission #fold-{name}").count() == 1
+    fold(page, "robots", True)
+    assert page.inner_text("#rover-x") != "–"
+    fold(page, "camera", False)
     page.reload()
-    page.wait_for_selector("#view-fleet", state="visible", timeout=8000)                    # remembered
+    page.wait_for_selector("#map-dynamic", state="attached", timeout=8000)
+    assert page.locator("#fold-camera").evaluate("e => e.classList.contains('folded')")     # remembered
+    assert not page.locator("#fold-robots").evaluate("e => e.classList.contains('folded')")
+    fold(page, "camera", True)
+    fold(page, "robots", False)
+    view(page, "evidence")
+    assert page.locator("#view-mission").is_hidden()
     view(page, "mission")
 
 
@@ -169,21 +184,22 @@ def test_the_keyboard_shortcuts(page):
 def test_mentor_toggle_and_manual_control(page, server):
     page.check("#mentor")
     server.wait(lambda s: s["mentor_present"], 8, "mentor")
-    view(page, "fleet")
+    fold(page, "manual", True)
     page.click("text=Fwd 0.3 m")
     s = server.wait(lambda s: (s["manual"] or {}).get("status") in ("done", "failed"), 15, "manual drive")
     assert s["manual"]["action"] == "rover_drive" and s["manual"]["status"] == "done"
     page.wait_for_function("document.querySelector('#manual-last').textContent.includes('rover_drive')", timeout=5000)
     page.click("text=Snapshot")
     server.wait(lambda s: s["last_image_id"], 10, "snapshot")
-    view(page, "mission")
     page.wait_for_function("document.querySelector('#camera').src.includes('/images/img_')", timeout=5000)
     assert page.locator("#camera").evaluate("i => i.complete && i.naturalWidth > 0")
     box = page.locator("#map").bounding_box()
     page.mouse.move(box["x"] + box["width"] * 0.6, box["y"] + box["height"] * 0.4)
     page.wait_for_function("document.getElementById('readout').textContent.startsWith('x ') && !document.getElementById('readout').textContent.includes('–')")
+    fold(page, "manual", False)
     page.mouse.click(box["x"] + box["width"] * 0.6, box["y"] + box["height"] * 0.4)
     assert page.input_value("#r-x") != "1.5"                                                # clicking the map fills x / y
+    page.wait_for_selector("#fold-body-manual", state="visible", timeout=3000)               # ... and opens hands-on control
     page.click("#camera-card")                                                              # the camera feed opens large
     page.wait_for_selector("#lightbox", state="visible")
     page.keyboard.press("Escape")
@@ -207,11 +223,10 @@ def test_a_scenario_runs_with_the_authorization_question_in_plain_sight(page, se
     assert page.inner_text("#phases li.active b") == "Authorize"                             # the story at a glance
     assert "decision" in page.inner_text("#now-title").lower()
     assert page.locator("#plan li.done").count() >= 5
-    view(page, "plan")
+    fold(page, "steps", True)
     page.wait_for_function("""() => { const a = document.querySelector('#plan li.current').getBoundingClientRect();
         const b = document.querySelector('#plan-scroll').getBoundingClientRect(); return a.top >= b.top - 1 && a.bottom <= b.bottom + 1; }""",
-                           timeout=4000)                                                   # the working step is in view
-    view(page, "mission")
+                           timeout=4000)                                                   # the working step is in view, beside the map
     page.click("#answer-yes")
     s = server.wait(lambda s: s["mission"]["status"] in ("done", "failed"), 60, "mission end")
     assert s["mission"]["status"] == "done", s["mission"]["error"]
@@ -248,9 +263,8 @@ def test_the_search_shows_its_pattern_and_the_scouts_trail(page, server):
 def test_the_robots_glide_instead_of_jumping(page, server):
     """The marker moves through intermediate positions between polls (a CSS transition), it does not teleport."""
     start_over(page, server)
-    view(page, "fleet")
+    fold(page, "manual", True)
     page.click("#r-goto")
-    view(page, "mission")                                                                   # watch it on the map
     seen = set()
     t0 = time.time()
     while time.time() - t0 < 6:
@@ -272,9 +286,8 @@ def test_typed_missions_changes_errors_and_stop(page, server):
     page.fill("#change-text", "also check field A")
     page.click("#change-go")
     page.wait_for_function("document.querySelector('#change-text').value === ''", timeout=8000)
-    view(page, "plan")
+    fold(page, "steps", True)
     page.wait_for_selector("#previous", state="visible", timeout=5000)                       # the old plan stays visible
-    view(page, "mission")
     assert page.locator("#mission-form").is_hidden() and page.locator("#mission-text").is_disabled()   # one mission at a time
     assert page.locator("#change-form").is_visible()
     # the form is hidden while a mission is live, so provoke the server's 409 by submitting it programmatically

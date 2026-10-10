@@ -56,8 +56,6 @@
 
     <nav class="vnav" role="tablist" aria-label="Sections">
       <button role="tab" class="vtab" id="nav-mission" data-view="mission" aria-controls="view-mission" aria-selected="true"><svg class="ic"><use href="#i-target"/></svg><span>Mission</span><i class="dot" aria-hidden="true"></i></button>
-      <button role="tab" class="vtab" id="nav-plan" data-view="plan" aria-controls="view-plan" aria-selected="false"><svg class="ic"><use href="#i-doc"/></svg><span>Plan</span><em class="badge" id="plan-nav-count" hidden></em></button>
-      <button role="tab" class="vtab" id="nav-fleet" data-view="fleet" aria-controls="view-fleet" aria-selected="false"><svg class="ic"><use href="#i-hub"/></svg><span>Fleet</span><i class="dot" aria-hidden="true"></i></button>
       <button role="tab" class="vtab" id="nav-evidence" data-view="evidence" aria-controls="view-evidence" aria-selected="false"><svg class="ic"><use href="#i-camera"/></svg><span>Evidence</span><em class="badge" id="findings-count">0</em></button>
     </nav>
 
@@ -172,7 +170,28 @@
             </form>
           </section>
 
-          <div class="cams">
+          <section class="card fold" data-fold="steps" id="fold-steps">
+            <button type="button" class="fold-head" aria-expanded="true" aria-controls="fold-body-steps">
+              <svg class="ic"><use href="#i-doc"/></svg><h2>Steps</h2><em class="badge" id="plan-nav-count" hidden></em><span id="plan-count" class="count" hidden>0 / 0</span><i class="dot" aria-hidden="true"></i><svg class="ic chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="fold-body" id="fold-body-steps">
+              <div class="scroll plan-scroll" id="plan-scroll">
+          <ol id="plan" class="steps"></ol>
+          <div id="plan-empty" class="empty">
+            <svg class="ic big"><use href="#i-hub"/></svg>
+            <h3>No mission yet</h3>
+            <p>Pick a use case above, or describe the job.</p>
+          </div>
+          <details id="previous" hidden><summary>Previous version of the plan</summary><ol id="previous-plan" class="steps old"></ol></details>
+        </div>
+            </div>
+          </section>
+          <section class="card fold" data-fold="camera" id="fold-camera">
+            <button type="button" class="fold-head" aria-expanded="true" aria-controls="fold-body-camera">
+              <svg class="ic"><use href="#i-camera"/></svg><h2>Camera</h2><i class="dot" aria-hidden="true"></i><svg class="ic chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="fold-body" id="fold-body-camera">
+              <div class="cams">
             <button class="cam" id="live-card" type="button" aria-label="Rover camera, live, click to enlarge" hidden>
               <img id="live" alt="Rover camera, live video" hidden>
               <span id="live-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>Connecting to the rover camera</span>
@@ -184,34 +203,20 @@
               <span class="cam-bar"><i class="rec"></i><span id="camera-label">Rover camera</span></span>
             </button>
           </div>
-        </aside>
-      </div>
-    </section>
-
-    <!-- ================================================================ PLAN: every step -->
-    <section class="view view-plan" id="view-plan" role="tabpanel" aria-labelledby="nav-plan" hidden>
-      <section class="card plan-card">
-        <header class="card-head">
-          <h2>Every step of the plan</h2>
-          <span id="plan-count" class="count">0 / 0</span>
-        </header>
-        <p class="card-sub">Each step is checked against what the robots are allowed to do before anything moves. Nothing runs until it is approved.</p>
-        <div class="scroll plan-scroll" id="plan-scroll">
-          <ol id="plan" class="steps"></ol>
-          <div id="plan-empty" class="empty">
-            <svg class="ic big"><use href="#i-hub"/></svg>
-            <h3>No mission yet</h3>
-            <p>Start one from the Mission page: pick a use case or describe the job.</p>
-          </div>
-          <details id="previous" hidden><summary>Previous version of the plan</summary><ol id="previous-plan" class="steps old"></ol></details>
-        </div>
-      </section>
-    </section>
-
-    <!-- ================================================================ FLEET: robots, health, hands-on control -->
-    <section class="view view-fleet" id="view-fleet" role="tabpanel" aria-labelledby="nav-fleet" hidden>
-      <div class="fleet-grid">
-        <article class="unit rover" id="unit-rover">
+              <button class="cam overhead" id="overhead-card" type="button" aria-label="Overhead camera, click to enlarge" hidden>
+          <img id="overhead" alt="Overhead camera: the field from above" hidden>
+          <span id="overhead-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No overhead frame yet</span>
+          <span class="cam-bar"><i class="rec"></i><span>Overhead camera</span><em id="overhead-info"></em></span>
+        </button>
+            </div>
+          </section>
+          <section class="card fold folded" data-fold="robots" id="fold-robots">
+            <button type="button" class="fold-head" aria-expanded="false" aria-controls="fold-body-robots">
+              <svg class="ic"><use href="#i-hub"/></svg><h2>Robots</h2><i class="dot" aria-hidden="true"></i><svg class="ic chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="fold-body" id="fold-body-robots">
+              <div class="units">
+                <article class="unit rover" id="unit-rover">
           <header><svg class="ic"><use href="#i-rover"/></svg><b>Rover</b><span class="kind">RoboMaster EP · camera + gripper</span><span id="rover-chip" class="chip" hidden></span></header>
           <div class="nums"><span><em>x</em><b id="rover-x">&ndash;</b></span><span><em>y</em><b id="rover-y">&ndash;</b></span><span><em>heading</em><b id="rover-h">&ndash;</b></span></div>
           <div class="foot"><span id="rover-source" class="muted">no position yet</span></div>
@@ -228,16 +233,15 @@
           <div class="nums"><span><em>x</em><b id="target-x">&ndash;</b></span><span><em>y</em><b id="target-y">&ndash;</b></span></div>
           <div class="foot"><span id="target-note" class="muted">second Crazyflie, read from Lighthouse</span></div>
         </article>
-        <button class="cam overhead" id="overhead-card" type="button" aria-label="Overhead camera, click to enlarge" hidden>
-          <img id="overhead" alt="Overhead camera: the field from above" hidden>
-          <span id="overhead-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No overhead frame yet</span>
-          <span class="cam-bar"><i class="rec"></i><span>Overhead camera</span><em id="overhead-info"></em></span>
-        </button>
-      </div>
-
-      <section class="card manual" id="panel-manual">
-        <header class="card-head"><h2>Hands-on control</h2><span id="calibration" class="warnchip" hidden></span></header>
-        <p id="manual-hint" class="hint"></p>
+              </div>
+            </div>
+          </section>
+          <section class="card fold manual folded" data-fold="manual" id="fold-manual">
+            <button type="button" class="fold-head" aria-expanded="false" aria-controls="fold-body-manual">
+              <svg class="ic"><use href="#i-rover"/></svg><h2>Hands-on control</h2><i class="dot" aria-hidden="true"></i><svg class="ic chev"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="fold-body" id="fold-body-manual">
+              <p id="manual-hint" class="hint"></p>
         <div class="manual-grid">
           <div class="group">
             <h3><svg class="ic"><use href="#i-scout"/></svg>Scout</h3>
@@ -255,7 +259,7 @@
               <button type="button" class="btn" id="d-goto">Go to x, y, z</button>
               <button type="button" class="btn" id="d-mark">Mark x, y</button>
             </div>
-            <p class="hint small">Tip: click the map on the Mission page to fill x and y.</p>
+            <p class="hint small">Tip: click the map to fill x and y.</p>
           </div>
           <div class="group">
             <h3><svg class="ic"><use href="#i-rover"/></svg>Rover</h3>
@@ -290,7 +294,11 @@
           </div>
         </div>
         <div id="manual-last" class="manual-last"></div>
-      </section>
+              <span id="calibration" class="warnchip" hidden></span>
+            </div>
+          </section>
+        </aside>
+      </div>
     </section>
 
     <!-- ================================================================ EVIDENCE: what was found, and the record -->

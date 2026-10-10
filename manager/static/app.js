@@ -304,7 +304,8 @@
     $("light-drone").title = mt.drone_rtt_ms != null ? "Scout link: " + mt.drone_rtt_ms + " ms" : "Scout";
     var r = s.robots.rover || {}, d = s.robots.drone || {};
     var fleetWarn = !r.online || !d.online || d.pose_ok === false || !!(r.health && r.health.error);
-    $("nav-fleet").classList.toggle("warn", fleetWarn);
+    $("fold-robots").classList.toggle("warn", fleetWarn);
+    $("fold-steps").classList.toggle("live", s.mission.status === "running" || s.mission.status === "replanning");
     var mentor = $("mentor");
     if (document.activeElement !== mentor && !S.busy.has(mentor)) mentor.checked = !!s.mentor_present;
     var cal = $("calibration");
@@ -418,7 +419,7 @@
   }
   function keepCurrentInView() {
     var s = S.s, cur = s && s.current_step;
-    if (!cur || Date.now() - S.userScrollAt < 4000) return;
+    if (!cur || Date.now() - S.userScrollAt < 4000 || $("fold-steps").classList.contains("folded")) return;
     var li = S.steps.get((s.mission.id || "-") + ":" + cur);
     if (!li) return;
     var box = $("plan-scroll");
@@ -445,7 +446,7 @@
     var title, why = "";
     if (st === "planning") { title = "Planning the mission"; why = "Turning the mission into steps the robots are allowed to do."; }
     else if (st === "awaiting_approval") { title = "Waiting for your approval"; why = steps.length + " steps are ready. Nothing moves until you approve."; }
-    else if (m.pending_question) { title = "Waiting for your decision"; why = m.pending_question; }
+    else if (m.pending_question) { title = "Waiting for your decision"; why = "Answer the question above to continue."; }
     else if (cur) { title = stepTitle(cur); why = cur.why || ""; }
     else if (st === "done") { title = "Mission complete"; why = m.reason || ""; }
     else if (st === "failed") { title = "Mission failed"; why = m.error || ""; }
@@ -655,7 +656,7 @@
   /* ---- manual control + scenarios ---- */
   function renderManual() {
     var idle = isIdle();
-    document.querySelectorAll("#panel-manual button").forEach(function (b) { setEnabled(b, idle); });
+    document.querySelectorAll("#fold-manual .fold-body button").forEach(function (b) { setEnabled(b, idle); });
     setText($("manual-hint"), idle ? "Drive the robots by hand between missions. Every action still passes through the safety checks."
       : "Manual control is for between missions. Use Stop to end the current one.");
     var m = S.s.manual, box = $("manual-last");
@@ -797,7 +798,7 @@
       S.pick = { x: x, y: y };
       ["d-x", "r-x"].forEach(function (id) { $(id).value = x.toFixed(2); });
       ["d-y", "r-y"].forEach(function (id) { $(id).value = y.toFixed(2); });
-      if (!S.pickedOnce) { S.pickedOnce = true; banner("Position copied to Manual control.", "info"); }
+      if ($("fold-manual").classList.contains("folded")) setFold("manual", true, true);
       renderMap();
     });
   }
@@ -884,7 +885,7 @@
   }
 
   /* ------------------------------------------------------------------ sections, theme, lightbox */
-  var VIEWS = ["mission", "plan", "fleet", "evidence"];
+  var VIEWS = ["mission", "evidence"];
   function selectView(name) {
     if (VIEWS.indexOf(name) < 0) name = "mission";
     S.section = name;
@@ -892,8 +893,17 @@
     VIEWS.forEach(function (v) { $("view-" + v).hidden = v !== name; });
     if (name === "evidence") { var el = $("findings-count"); el.classList.remove("bump"); }
     if (name === "mission") $("nav-mission").classList.remove("alert");
-    if (name === "plan") keepCurrentInView();
     store("fp-view", name);
+  }
+  /* Panels beside the map fold open or closed; the choice is remembered per panel. */
+  function setFold(name, open, scroll) {
+    var sec = $("fold-" + name);
+    if (!sec) return;
+    sec.classList.toggle("folded", !open);
+    sec.querySelector(".fold-head").setAttribute("aria-expanded", String(open));
+    store("fp-fold-" + name, open ? "open" : "closed");
+    if (open && name === "steps") { S.userScrollAt = 0; keepCurrentInView(); }
+    if (open && scroll) sec.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
   function openLightbox(src) {
     if (!src) return;
@@ -947,7 +957,12 @@
     document.querySelectorAll(".vtab").forEach(function (t) {
       t.addEventListener("click", function () { selectView(t.getAttribute("data-view")); });
     });
-    $("see-plan").addEventListener("click", function () { selectView("plan"); });
+    $("see-plan").addEventListener("click", function () { setFold("steps", true, true); });
+    document.querySelectorAll("[data-fold]").forEach(function (sec) {
+      var name = sec.getAttribute("data-fold"), saved = recall("fp-fold-" + name);
+      if (saved) setFold(name, saved === "open");
+      sec.querySelector(".fold-head").addEventListener("click", function () { setFold(name, sec.classList.contains("folded")); });
+    });
     $("to-evidence").addEventListener("click", function () { selectView("evidence"); });
     $("theme").addEventListener("click", function () {
       var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";

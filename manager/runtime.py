@@ -1,5 +1,6 @@
 """Wiring: config -> adapters -> Ctx. ROVER and DRONE are chosen independently, so mixed mode works
 (real rover + mock drone = Level 3)."""
+import random
 from typing import Optional
 
 from .adapters.base import RealClock
@@ -9,6 +10,7 @@ from .adapters.rover_http import RoverHttp
 from .config import Config
 from .llm import LLM, make_llm
 from .controller import Controller
+from .detector import SimDetector
 from .localization import Localization
 from .models import load_arena
 from .perception import make_perception
@@ -40,8 +42,10 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     loc = Localization(rover, drone, arena, clock, use_drone_fix=trust_drone_fix)
     perception = make_perception(cfg, arena, llm, world if mock_rover else None)
     safety = Safety(cfg, arena, store, rover, drone)
+    detector = SimDetector(drone, cfg.detector_fov_deg, cfg.detector_noise_m, cfg.detector_miss_p,
+                           random.Random(cfg.mock_seed + 2))
     ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone, loc=loc, perception=perception,
-              safety=safety, clock=clock, faults=faults)
+              safety=safety, clock=clock, faults=faults, detector=detector)
     return ctx, world
 
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from .adapters.base import RobotError
+from .detector import search_waypoints
 from .models import Rect, distance
 
 log = logging.getLogger("manager.tools")
@@ -86,6 +87,7 @@ class Ctx:
     cancel: threading.Event = field(default_factory=threading.Event)
     ask: Optional[Callable[[str], Optional[str]]] = None    # controller's ask_human hook
     drone_out: bool = False
+    detector: object = None                                 # SimDetector (the scout's simulated camera)
 
     def cancelled(self) -> bool:
         return self.cancel.is_set()
@@ -228,14 +230,8 @@ def run_action(ctx: Ctx, name: str, args: dict) -> dict:
 
 
 # ---------------------------------------------------------------- drone tools
-@action("drone", needs=(("target",), ("x0", "y0", "x1", "y1")), checkpoint=True, mentor=True, fault="scan")
-def drone_scan(ctx: Ctx, args: dict) -> dict:
-    """Take off from where the drone is (normally the rover's plate), sweep a rectangle and report spots where
-    something sticks up from the floor. The drone cannot identify objects, only say "something is here".
-    The drone stays in the air afterwards: call drone_dock (or drone_land) before moving the rover.
-    Args: target = "$zone.<name>" (clipped to the flight cage), or x0, y0, x1, y1 in metres.
-    Returns: {findings: [{id, x, y, dz, by}]}; f1 is the strongest hit."""
-    clipped = False
+def _flight_area(ctx: Ctx, args: dict):
+    """target (a zone, clipped to the cage) or x0..y1 (must be inside the cage) -> (Rect, clipped) or an error dict."""
     if args.get("target") is not None:
         loc = _location(ctx, args)
         rect = loc["rect"] or Rect(x0=loc["x"] - 0.6, y0=loc["y"] - 0.6, x1=loc["x"] + 0.6, y1=loc["y"] + 0.6)
@@ -244,11 +240,24 @@ def drone_scan(ctx: Ctx, args: dict) -> dict:
                     y1=min(rect.y1, cage.y1))
         if clip.x0 >= clip.x1 or clip.y0 >= clip.y1:
             return _err("that area is outside the drone cage")
-        clipped, rect = clip != rect, clip
-    else:
-        rect = Rect(x0=args["x0"], y0=args["y0"], x1=args["x1"], y1=args["y1"]).normalized()
-        if (msg := ctx.safety.drone_rect(rect)):
-            return _err(msg)
+        return clip, clip != rect
+    rect = Rect(x0=args["x0"], y0=args["y0"], x1=args["x1"], y1=args["y1"]).normalized()
+    if (msg := ctx.safety.drone_rect(rect)):
+        return _err(msg)
+    return rect, False
+
+
+@action("drone", needs=(("target",), ("x0", "y0", "x1", "y1")), checkpoint=True, mentor=True, fault="scan")
+def drone_scan(ctx: Ctx, args: dict) -> dict:
+    """Take off from where the drone is (normally the rover's plate), sweep a rectangle and report spots where
+    something sticks up from the floor. The drone cannot identify objects, only say "something is here".
+    The drone stays in the air afterwards: call drone_dock (or drone_land) before moving the rover.
+    Args: target = "$zone.<name>" (clipped to the flight cage), or x0, y0, x1, y1 in metres.
+    Returns: {findings: [{id, x, y, dz, by}]}; f1 is the strongest hit."""
+    area = _flight_area(ctx, args)
+    if isinstance(area, dict):
+        return area
+    rect, clipped = area
     if (msg := ctx.safety.drone_battery(ctx.drone.pose().get("battery_v"))):
         return _err(msg)
     ctx.drone_out = True                                         # from takeoff until dock/land, even if the scan fails
@@ -303,6 +312,61 @@ def drone_mark(ctx: Ctx, args: dict) -> dict:
     (finding,) = ctx.store.add_findings([{"x": loc["x"], "y": loc["y"], "by": "scout"}])
     ctx.store.say("ai", f"Scout is hovering over {finding.id} at ({loc['x']:.1f}, {loc['y']:.1f}).")
     return {"ok": True, "pose": _brief_pose(ctx), "finding_id": finding.id}
+
+
+@action("drone", needs=(("target",), ("x0", "y0", "x1", "y1")), choices={"mode": ("first", "all")},
+        checkpoint=True, mentor=True, fault="scan")
+def drone_search(ctx: Ctx, args: dict) -> dict:
+    """Fly a lawnmower search pattern over an area at search height and watch with the scout's downward detector
+    for the crashed drone. Stops at the first detection unless mode is "all". Every detection is registered as a
+    finding (f1 = the first). Finding nothing is a normal result, not an error. The scout stays in the air.
+    Args: target = "$zone.<name>" (clipped to the flight cage) or x0, y0, x1, y1 in metres;
+    mode = "first" (default) | "all".
+    Returns: {findings: [{id, x, y, by}], waypoints_flown, area, search_path}."""
+    area = _flight_area(ctx, args)
+    if isinstance(area, dict):
+        return area
+    rect, clipped = area
+    if ctx.detector is None:
+        return _err("no detector is configured")
+    z = ctx.cfg.search_z
+    path = search_waypoints(rect, ctx.detector.footprint_radius(z))
+    base = {"area": [rect.x0, rect.y0, rect.x1, rect.y1], "clipped": clipped, "search_path": [[x, y] for x, y in path]}
+    pose = ctx.drone.pose()
+    if (msg := ctx.safety.drone_battery(pose.get("battery_v"))):
+        return _err(msg, **base)
+    ctx.drone_out = True
+    if pose.get("state") != "flying":
+        up = _norm(ctx.drone.takeoff(z))
+        if not up["ok"]:
+            return {**up, **base}
+    found: list = []
+    flown = 0
+    for x, y in path:
+        partial = {**base, "waypoints_flown": flown, "findings": _brief_findings(found)}
+        if ctx.cancelled():
+            return _err("cancelled", **partial)
+        if (msg := ctx.safety.drone_battery(ctx.drone.pose().get("battery_v"))):
+            return _err(f"{msg}; search aborted, land the drone", blocked="battery", **partial)
+        res = _norm(ctx.drone.goto(x, y, z))
+        if not res["ok"]:
+            return {**res, **partial}
+        flown += 1
+        hits = ctx.detector.observe(ctx.drone.pose())
+        for h in hits:
+            (f,) = ctx.store.add_findings([{"x": h["x"], "y": h["y"], "by": "scout"}])
+            if f not in found:
+                found.append(f)
+            ctx.store.set_metric("detection_error_m", h["error_m"])
+        if hits and args.get("mode") != "all":
+            break
+    ctx.store.say("ai", f"Scout search flew {flown} waypoints and found {len(found)} object(s)." if found
+                  else f"Scout search flew {flown} waypoints and found nothing.")
+    return {"ok": True, **base, "waypoints_flown": flown, "findings": _brief_findings(found)}
+
+
+def _brief_findings(found: list) -> list:
+    return [f.model_dump(include={"id", "x", "y", "by"}) for f in found]
 
 
 @action("drone", needs=(("x", "y", "z"),), mentor=True)

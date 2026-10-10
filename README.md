@@ -13,8 +13,8 @@ This README is for everyone (humans and coding agents) working on the repo. It e
 ```mermaid
 flowchart TB
     H([Human: mission text/voice, Approve / Change / Stop])
-    D[Dashboard 🟡<br/>reads /state every 0.5 s]
-    M[AI manager 🟡 :8002<br/>/mission /approve /stop /state]
+    D[Dashboard ✅ /ui/<br/>reads /state every 0.5 s]
+    M[AI manager ✅ :8002<br/>/mission /approve /stop /state + dashboard]
     L{{LLM/VLM<br/>Gemini Robotics-ER 2<br/>tool calling}}
     A1[Rover adapter<br/>HTTP :8000]
     A2[Drone adapter<br/>HTTP :8001 🟡 / cflib in-process ✅]
@@ -142,11 +142,11 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 | --- | --- | --- |
 | Rover server `:8000` with `/drive /speed /grip /arm /snapshot /stop /pose` | 🟡 `robot_server.py` not in repo; the endpoints below are **inferred from callers** | Rover squad |
 | Drone server `:8001` with `/takeoff /goto /scan /land /pose` | 🟡 Not in repo. `fleet.py` drives Crazyflies **in-process with cflib** instead of over HTTP | Drone squad |
-| AI manager `:8002` with `/mission /approve /stop /state` | 🟡 Not in repo. `fleet.py::run` is a one-shot CLI: no server, no state, no approval | AI manager squad |
-| Human **approve / change / stop** gate | 🟡 Nothing pauses between plan and action. Today the model acts immediately | AI manager squad |
-| Re-plan on failure, live plan change ("skip the left side…") | 🟡 Not implemented. Needs a persistent chat session that can take a new user turn mid-mission | AI manager squad |
+| AI manager `:8002` with `/mission /approve /stop /state` | ✅ in `manager/` (on mocks; not yet on real robots). `fleet.py::run` stays the one-shot reference | AI manager squad |
+| Human **approve / change / stop** gate | ✅ in `manager/` (plan → Approve → run, `409` on stale approvals, Stop from any state) | AI manager squad |
+| Re-plan on failure, live plan change ("skip the left side…") | ✅ in `manager/` (supervisor checkpoints + `/change`; the live change needs a Gemini key) | AI manager squad |
 | Dashboard reading `/state` | 🟡 Not in repo | Dashboard |
-| `MOCK=1` everywhere | 🟡 Done in `fleet.py` and `fleet_agent.py`; missing in `brain.py` | AI manager squad |
+| `MOCK=1` everywhere | 🟡 Done in `fleet.py`, `fleet_agent.py` and `manager/` (`ROVER=mock DRONE=mock`); missing in `brain.py` | AI manager squad |
 | Unified drone + rover on one map | ✅ in `fleet.py` via the rider trick; the digital-twin view is 🟡 | Shared-map squad |
 
 ### Rover HTTP API as the callers use it (✅ verified against call sites, 🟡 server not seen)
@@ -164,17 +164,31 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 ⚠️ `fleet.py` sends `y = SIGN_Y * …` because the RoboMaster SDK treats **+y as right** while `brain.py` documents `left_m`. The two files disagree about which side is positive. The rover server must pick one convention and document it.
 ⚠️ `/drive` is open loop and blocking in the plan. `/speed` must auto-expire after `t`, so a dropped Wi-Fi/5G link stops the robot instead of leaving it driving.
 
-### Suggested target shape for the AI manager 🟡
+### AI manager ✅ (mocks) / 🟡 (real robots)
 
-```
-POST /mission  {"text": "..."}      → LLM drafts plan, status = "awaiting_approval"
-POST /approve  {"edits": "..."?}    → executes (optionally after a human edit)
-POST /stop                          → cancel + call every robot's /stop and /land
-GET  /state                         → {status, plan[], current_step, robots{name:{pose,battery?}},
-                                        found[], last_image_url, log[]}
+**Current scope and work packages (drone-recovery demo, robot server contracts, dashboard): [docs/mothership-plan.md](docs/mothership-plan.md).** Read it first. Design rationale and the `/state` contract: [docs/ai-manager-plan.md](docs/ai-manager-plan.md).
+
+#### AI manager quick start
+
+```bash
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-manager.txt
+.venv/bin/python -m pytest                                   # ~300 tests on mock robots, ~13 s
+
+# the mothership: server + dashboard on :8002, fake robots, no API key needed
+ROVER=mock DRONE=mock MOCK_TIME_SCALE=10 .venv/bin/python -m manager.server
+open http://localhost:8002/                                  # the dashboard (map, plan, camera, manual control)
+
+# a whole mission in the terminal instead
+MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli --scenario t3_recover_hostile --auto-approve --mentor
+MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli "A hostile drone crashed in field A. Find it and move it to the disposal zone." --mentor
+
+# real robots, one env var each (mixed mode works); add GEMINI_API_KEY for AI planning
+ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv/bin/python -m manager.server
 ```
 
-Run the mission in a background thread; keep the `chat` object alive between turns so "skip the left side" can be sent as a new user message to the same session. `/stop` must work from any state and must not depend on the LLM.
+Three ways to get a plan, all through the same validation and safety (the AI is optional): type a mission (`POST /mission`, Gemini or the built-in plan), load a **scenario** from [scenarios/](scenarios/) (`POST /scenarios/{name}/load`, no AI), or run one action by hand (`POST /manual`, between missions). The gripper will not close on a hazardous finding until the operator answers *yes* to the authorization question; that gate is in code and applies to every plan source.
+
+Env vars: `ROVER` / `DRONE` (`mock` or a URL), `DOCK_MODE=1` (old "drone rides the rover" mode), `SCENARIO=<name>` (load at start), `MOCK_TIME_SCALE` (simulated clock speed-up), `MOCK_FAIL=goto:0.2,grip:0.3` (failure injection), `CHANGE_NEEDS_APPROVAL=1`, `PERCEPTION=mock|gemini`, `SEARCH_Z` / `MARK_Z` / `SEPARATION_M` / `DETECTOR_*`, `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` / `ROVER_ARM_MODE`. Opt-in test layers: `pytest -m live` (real Gemini) and `pytest -m ui` (the dashboard in headless Chromium; `requirements-ui-tests.txt`).
 
 ---
 

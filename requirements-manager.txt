@@ -1,0 +1,9 @@
+google-genai
+requests
+fastapi
+uvicorn
+pydantic>=2
+pytest
+httpx
+pillow
+pyyaml

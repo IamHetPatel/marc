@@ -75,6 +75,9 @@ class GeminiPerception:
 
 
 # ---------------------------------------------------------------- Mock: ground truth from the mock world
+GENERIC_WORDS = {"object", "thing", "item", "obstacle", "anything", "unknown"}
+
+
 class MockPerception:
     """Reads the mock world instead of a VLM so mission tests need no network. Uses the same projection
     that rendered the image, so the grip-line servoing loop is exercised for real."""
@@ -83,9 +86,10 @@ class MockPerception:
         self.world = world
 
     def _best(self, target: str):
-        words = [w for w in target.lower().split() if w not in ("the", "a", "an")]
+        words = [w for w in target.lower().split() if w not in ("the", "a", "an", "on", "floor")]
         vis = self.world.visible()
-        match = [(o, p) for o, p in vis if any(w in o["label"].lower() for w in words)]
+        generic = any(w in GENERIC_WORDS for w in words)
+        match = vis if generic else [(o, p) for o, p in vis if any(w in o["label"].lower() for w in words)]
         return min(match or [], key=lambda op: op[1]["f"], default=None)
 
     def point(self, jpeg, target):

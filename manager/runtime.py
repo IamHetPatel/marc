@@ -8,11 +8,14 @@ from .adapters.mock import build_mock
 from .adapters.rover_http import RoverHttp
 from .config import Config
 from .llm import LLM, make_llm
+from .controller import Controller
 from .localization import Localization
 from .models import load_arena
 from .perception import make_perception
+from .planner import Planner
 from .safety import Safety
 from .state import Store
+from .supervisor import LLMSupervisor
 from .tools import Ctx
 
 
@@ -40,3 +43,15 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone, loc=loc, perception=perception,
               safety=safety, clock=clock, faults=faults)
     return ctx, world
+
+
+def build_controller(cfg: Optional[Config] = None, llm: Optional[LLM] = None, auto_approve: bool = False,
+                     use_env_llm: bool = True) -> Controller:
+    """Everything wired and ready; call .start() to run the telemetry monitor.
+    `llm=None` with `use_env_llm=True` uses Gemini when a key is set, else the canned plan + rule supervisor."""
+    cfg = cfg or Config.from_env()
+    store = Store()
+    if llm is None and use_env_llm:
+        llm = make_llm(cfg, on_latency=lambda ms: store.set_metric("llm_latency_ms_last", ms))
+    ctx, _world = build_ctx(cfg, store, llm)
+    return Controller(ctx, Planner(llm, ctx.arena), LLMSupervisor(llm, ctx.arena), auto_approve=auto_approve)

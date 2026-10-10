@@ -6,6 +6,7 @@ Sources, best first (every pose carries `source` and `age_s`):
   start_cross+odometry  never had a fix: assume the rover started on the home cross
 """
 import math
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -51,9 +52,14 @@ class Localization:
         self.fix: Optional[Fix] = None
         self._drone_t = -1e9
         self._docked = False
+        self._lock = threading.RLock()          # monitor thread and goto loop both call rover_pose
 
     def rover_pose(self) -> LocalizedPose:
         """Raises RobotError if the rover itself is unreachable."""
+        with self._lock:
+            return self._rover_pose()
+
+    def _rover_pose(self) -> LocalizedPose:
         odom = self.rover.pose()
         now = self.clock.now()
         if self.use_drone_fix and now - self._drone_t >= DRONE_POLL_S:

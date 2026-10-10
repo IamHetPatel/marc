@@ -25,7 +25,7 @@ class Store:
 
     # ------------------------------------------------------------ lifecycle
     def reset(self):
-        """Back to idle, keeping the mentor toggle and the image counter."""
+        """Back to idle, keeping the mentor toggle, robot telemetry and the image counter."""
         with self.lock:
             self.mission = MissionInfo()
             self.plan: list[Step] = []
@@ -34,8 +34,9 @@ class Store:
             self.messages: list[Message] = []
             self.log: list[dict] = []
             self.images: "OrderedDict[str, bytes]" = OrderedDict()
-            self.robots: dict = {"rover": {"online": False}, "drone": {"online": False}}
-            self.metrics: dict = {}
+            if not hasattr(self, "robots"):          # live telemetry survives a new mission
+                self.robots: dict = {"rover": {"online": False}, "drone": {"online": False}}
+                self.metrics: dict = {}
             self.current_step: Optional[str] = None
             self.last_image_id: Optional[str] = None
             self._finding_counter = 0
@@ -71,6 +72,11 @@ class Store:
         with self.lock:
             self._step_counter += 1
             return f"s{self._step_counter}"
+
+    def restart_step_ids(self):
+        """A brand-new plan (not a re-plan of a running one) starts numbering at s1 again."""
+        with self.lock:
+            self._step_counter = 0
 
     def set_plan(self, steps: list[Step], *, keep_previous: bool = False):
         """Install a new plan version. `keep_previous` stashes the old one for the dashboard's side-by-side."""
@@ -165,9 +171,9 @@ class Store:
             return self.images.get(image_id)
 
     # ------------------------------------------------------------ robots + metrics
-    def set_robot(self, name: str, info: dict):
+    def merge_robot(self, name: str, **fields):
         with self.lock:
-            self.robots[name] = info
+            self.robots[name] = {**self.robots.get(name, {}), **fields}
 
     def set_metric(self, key: str, value):
         with self.lock:

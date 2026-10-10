@@ -23,6 +23,27 @@ class LLM(Protocol):
                  temperature: float = 0.2) -> BaseModel: ...
 
 
+def call_with_timeout(fn: Callable, timeout: float):
+    """Run fn() in a daemon thread; raise TimeoutError if it takes longer. The straggler is abandoned, so callers
+    must treat its eventual result as stale."""
+    box = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except BaseException as e:           # re-raised in the caller
+            box["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise TimeoutError(f"no answer within {timeout:.0f} s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 def have_api_key() -> bool:
     return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 

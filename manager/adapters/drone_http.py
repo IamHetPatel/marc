@@ -10,6 +10,10 @@ class DroneHttp:
     def rtt_ms(self):
         return self.http.last_rtt_ms
 
+    def health(self) -> dict:
+        """{ok, mock, cage, scout, scout_lighthouse, target}: drone_server.py's link and Lighthouse status."""
+        return self.http.json("/health", timeout=2.0)
+
     def pose(self, cf: str = "scout") -> dict:
         return self.http.json("/pose", timeout=2.0, cf=cf)
 

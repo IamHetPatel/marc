@@ -29,6 +29,7 @@ log = logging.getLogger("manager.controller")
 
 IDLE_STATES = ("idle", "done", "failed", "stopped")
 MONITOR_PERIOD_S = 0.5
+HEALTH_EVERY = 6                 # robot-server /health every 6 polls (3 s): battery, camera, Lighthouse
 
 
 class Conflict(Exception):
@@ -353,6 +354,7 @@ class Monitor(threading.Thread):
         super().__init__(daemon=True, name="monitor")
         self.ctrl, self._halt = ctrl, threading.Event()
         self.fails = {"rover": 0, "drone": 0}
+        self._polls = 0
 
     def halt(self):
         self._halt.set()
@@ -375,8 +377,13 @@ class Monitor(threading.Thread):
             self._fail("rover")
         try:
             d = ctx.drone.pose()
-            store.merge_robot("drone", online=True, pose={k: d.get(k) for k in ("x", "y", "z")},
-                              state=d.get("state"), battery_v=d.get("battery_v"))
+            if d.get("ok", True) is False:          # the server answers, but its pose is not trustworthy (tracking lost)
+                store.merge_robot("drone", online=True, pose_ok=False, pose_error=d.get("error"),
+                                  state=d.get("state"), battery_v=d.get("battery_v"))
+            else:
+                store.merge_robot("drone", online=True, pose_ok=True, pose_error=None,
+                                  pose={k: d.get(k) for k in ("x", "y", "z")},
+                                  state=d.get("state"), battery_v=d.get("battery_v"))
             self.fails["drone"] = 0
         except RobotError:
             self._fail("drone")
@@ -394,6 +401,22 @@ class Monitor(threading.Thread):
             rtt = getattr(getattr(ctx, name), "rtt_ms", None)
             if rtt is not None:
                 store.set_metric(f"{name}_rtt_ms", rtt)
+        if self._polls % HEALTH_EVERY == 0:
+            self.poll_health()
+        self._polls += 1
+
+    def poll_health(self):
+        """Robot-server status for the dashboard only: a failing /health never trips the watchdog (pose does that)."""
+        ctx, store = self.ctrl.base_ctx, self.ctrl.store
+        for name in ("rover", "drone"):
+            health = getattr(getattr(ctx, name), "health", None)
+            if health is None:
+                continue
+            try:
+                h = health()
+            except RobotError:
+                continue
+            store.merge_robot(name, health=_brief_health(name, h))
 
     def _fail(self, name: str):
         self.ctrl.store.merge_robot(name, online=False)
@@ -401,3 +424,13 @@ class Monitor(threading.Thread):
         if self.fails[name] >= self.ctrl.cfg.watchdog_fails and self.ctrl.store.status in ("running", "replanning"):
             self.fails[name] = 0
             self.ctrl.stop(reason=f"Watchdog: the {name} stopped answering")
+
+
+def _brief_health(name: str, h: dict) -> dict:
+    """The few /health fields the dashboard shows, so /state stays small."""
+    if name == "rover":
+        return {"battery_pct": h.get("battery"), "camera": h.get("camera"), "last": h.get("last"),
+                "mock": bool(h.get("mock")), "video": h.get("camera") == "live"}
+    lh = h.get("scout_lighthouse") or {}
+    return {"link": h.get("scout"), "target": h.get("target"), "mock": bool(h.get("mock")),
+            "lighthouse": lh.get("status"), "base_stations": lh.get("used"), "hint": lh.get("hint")}

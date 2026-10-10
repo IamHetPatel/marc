@@ -129,9 +129,28 @@ class MockPerception:
                 "reason": f"holding a {held['label']}" if held else "the gripper is empty"}
 
 
+class NoPerception:
+    """A real rover without GEMINI_API_KEY. Driving, the gripper, the arm and photos still work, so the floor can be
+    brought up from the dashboard; only the steps that must understand the camera image fail, with this reason."""
+
+    def __init__(self, why: str):
+        self.why = why
+
+    def point(self, jpeg, target):
+        raise LLMError(self.why)
+
+    def inspect(self, jpeg, question):
+        raise LLMError(self.why)
+
+    def holding(self, jpeg):
+        raise LLMError(self.why)
+
+
 def make_perception(cfg, arena, llm, world=None):
     mode = cfg.perception
     if mode == "auto":
+        if world is None and llm is None:
+            return NoPerception("understanding the rover camera needs GEMINI_API_KEY")
         mode = "mock" if world is not None else "gemini"
     if mode == "mock":
         if world is None:

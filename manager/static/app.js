@@ -214,8 +214,17 @@
   }
   function loadArena() {
     api("GET", "/arena").then(function (r) {
-      if (r.ok) { S.arena = r.data; buildMap(); render(); } else setTimeout(loadArena, 1500);
+      if (r.ok) { S.arena = r.data; manualDefaults(); buildMap(); render(); } else setTimeout(loadArena, 1500);
     });
+  }
+  /* Start the manual "go to" fields in the middle of the cage and of the arena, whatever frame arena.json uses
+     (the real floor's Lighthouse frame has negative coordinates). Only once: after that they are the operator's. */
+  function manualDefaults() {
+    if (S.cache.manualDefaults) return;
+    S.cache.manualDefaults = true;
+    var c = S.arena.drone_cage, b = S.arena.bounds;
+    $("d-x").value = ((c.x0 + c.x1) / 2).toFixed(2); $("d-y").value = ((c.y0 + c.y1) / 2).toFixed(2);
+    $("r-x").value = ((b.x0 + b.x1) / 2).toFixed(2); $("r-y").value = ((b.y0 + b.y1) / 2).toFixed(2);
   }
   function loadScenarios() {
     api("GET", "/scenarios").then(function (r) {
@@ -228,7 +237,7 @@
     if (!S.s) return;
     try {
       renderBar(); renderAttention(); renderComposer(); renderPlan(); renderFleet(); renderTicker();
-      renderCamera(); renderOverhead(); renderFindings(); renderSideFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
+      renderLive(); renderCamera(); renderOverhead(); renderFindings(); renderSideFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
     } catch (e) {
       banner("Dashboard error: " + e.message + " (STOP still works)", "", true);
       if (window.console) console.error(e);
@@ -396,9 +405,32 @@
     for (var i = 0; i < segs.length; i++) segs[i].classList.toggle("on", i < lit);
     bat.className = "battery" + (pct != null && pct < 0.2 ? " low" : pct != null && pct < 0.45 ? " mid" : "");
     setText($("scout-batt"), pct == null ? "no battery reading" : v.toFixed(2) + " V, " + Math.round(pct * 100) + "%");
+    renderHealth(r, d, sc);
     var tp = t.pose || {};
     setText($("target-x"), t.online ? n2(tp.x) : "–"); setText($("target-y"), t.online ? n2(tp.y) : "–");
     setText($("target-note"), t.online ? "Second Crazyflie, read from Lighthouse" : "No target drone detected");
+  }
+
+  /* What the robot servers say about themselves (/health, polled by the mothership every 3 s). A lost Lighthouse fix
+     is the one that matters most on the floor: the scout's numbers above are then the last good pose, not live. */
+  var LIGHTHOUSE = { "estimating position": "Lighthouse OK", "receiving, no position": "Lighthouse: no position yet",
+                     "not receiving": "Lighthouse: no base station seen" };
+  function renderHealth(r, d, chip) {
+    var rh = r.health || {}, dh = d.health || {}, rt = [], el = $("scout-health");
+    if (r.online) {
+      if (typeof rh.battery_pct === "number") rt.push("battery " + rh.battery_pct + "%");
+      if (rh.camera) rt.push(rh.camera === "live" ? "camera live" : rh.camera);
+    }
+    setText($("rover-health"), rt.join(" · "));
+    if (d.online && d.pose_ok === false) {
+      chip.hidden = false; chip.className = "chip warn"; setText(chip, "no fix");
+      setText(el, d.pose_error || "position not trusted"); el.className = "bad";
+      return;
+    }
+    var bs = dh.base_stations, st = dh.lighthouse ? (LIGHTHOUSE[dh.lighthouse] || "Lighthouse: " + dh.lighthouse) : "";
+    if (st && bs && bs.length) st += " (" + bs.length + " base station" + (bs.length > 1 ? "s" : "") + ")";
+    setText(el, !d.online || dh.mock ? "" : dh.hint || st);
+    el.className = dh.hint ? "bad" : "muted";
   }
 
   function renderTicker() {
@@ -419,6 +451,29 @@
     $("camera-empty").hidden = !!id;
     img.hidden = !id;
     if (id && S.cache.cam !== id) { S.cache.cam = id; img.src = "/images/" + encodeURIComponent(id) + ".jpg"; }
+  }
+
+  /* The real rover's live MJPEG, relayed by the mothership (/rover/video). One long-lived request while the card is
+     shown; a dropped stream is retried after a pause, never in a tight loop. The photo card below keeps showing the
+     latest stored image (the evidence the AI looked at). */
+  var LIVE_RETRY_MS = 3000;
+  function renderLive() {
+    var r = S.s.robots.rover || {}, on = !!(r.online && r.health && r.health.video), img = $("live");
+    $("live-card").hidden = !on;
+    setText($("camera-label"), on ? "Last photo" : "Rover camera");
+    setText($("live-info"), on && r.health.battery_pct != null ? r.health.battery_pct + "%" : "");
+    if (!on) {
+      if (S.cache.live) { S.cache.live = false; img.removeAttribute("src"); img.hidden = true; $("live-empty").hidden = false; }
+      return;
+    }
+    if (S.cache.live || Date.now() < (S.cache.liveRetry || 0)) return;
+    S.cache.live = true;
+    img.onerror = function () {
+      S.cache.live = false; S.cache.liveRetry = Date.now() + LIVE_RETRY_MS;
+      img.hidden = true; $("live-empty").hidden = false;
+    };
+    img.hidden = false; $("live-empty").hidden = true;
+    img.src = "/rover/video?t=" + Date.now();
   }
 
   /* The overhead webcam frame is not a stored image: it is fetched live, at most once a second, only while the camera
@@ -580,7 +635,7 @@
     });
     st.append(sv("text", { class: "tick", x: cx0 + cw - 2, y: cy0 - 6, "text-anchor": "end", text: "FLIGHT CAGE" }));
     st.append(sv("rect", { class: "bounds", x: sx(b.x0), y: sy(b.y1), width: (b.x1 - b.x0) * SCALE, height: (b.y1 - b.y0) * SCALE, fill: "none" }));
-    for (var x = Math.ceil(b.x0); x <= b.x1; x++) st.append(sv("text", { class: "tick", x: sx(x) - 6, y: sy(b.y0) + 17, text: x + " m" }));
+    for (var x = Math.ceil(b.x0); x <= b.x1; x++) st.append(sv("text", { class: "tick", x: sx(x), y: sy(b.y0) + 17, "text-anchor": "middle", text: x + " m" }));
     for (var y = Math.ceil(b.y0); y <= b.y1; y++) st.append(sv("text", { class: "tick", x: PADL - 8, y: sy(y) + 3.5, "text-anchor": "end", text: y + "" }));
     var hm = a.home;
     st.append(sv("path", { class: "home", d: "M" + (sx(hm.x) - 6) + " " + sy(hm.y) + "h12M" + sx(hm.x) + " " + (sy(hm.y) - 6) + "v12" }));
@@ -783,6 +838,7 @@
     });
     $("camera-card").addEventListener("click", function () { if (S.s && S.s.last_image_id) openLightbox($("camera").src); });
     $("overhead-card").addEventListener("click", function () { if (!$("overhead").hidden) openLightbox($("overhead").src); });
+    $("live-card").addEventListener("click", function () { if (!$("live").hidden) openLightbox("/rover/video?t=" + Date.now()); });
     $("lightbox").addEventListener("click", function () { $("lightbox").hidden = true; });
     document.addEventListener("click", function (ev) { if (ev.target.getAttribute && ev.target.getAttribute("data-zoom")) openLightbox(ev.target.src); });
     document.addEventListener("keydown", function (ev) {

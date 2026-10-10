@@ -99,10 +99,15 @@
       </div>
 
       <div class="side" aria-label="Rover camera and robot status">
+        <button class="cam" id="live-card" type="button" aria-label="Rover camera, live, click to enlarge" hidden>
+          <img id="live" alt="Rover camera, live video" hidden>
+          <span id="live-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>Connecting to the rover camera</span>
+          <span class="cam-bar"><i class="rec"></i><span>Rover live</span><em id="live-info"></em></span>
+        </button>
         <button class="cam" id="camera-card" type="button" aria-label="Rover camera, click to enlarge">
           <img id="camera" alt="Latest rover camera image" hidden>
           <span id="camera-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No camera frame yet</span>
-          <span class="cam-bar"><i class="rec"></i><span>Rover camera</span><em id="camera-id"></em></span>
+          <span class="cam-bar"><i class="rec"></i><span id="camera-label">Rover camera</span><em id="camera-id"></em></span>
         </button>
         <button class="cam" id="overhead-card" type="button" aria-label="Overhead camera, click to enlarge" hidden>
           <img id="overhead" alt="Overhead camera: the field from above" hidden>
@@ -113,11 +118,13 @@
           <header><svg class="ic"><use href="#i-rover"/></svg><b>Rover</b><span id="rover-chip" class="chip" hidden></span></header>
           <div class="nums"><span><em>x</em><b id="rover-x">&ndash;</b></span><span><em>y</em><b id="rover-y">&ndash;</b></span><span><em>hdg</em><b id="rover-h">&ndash;</b></span></div>
           <div class="foot"><span id="rover-source" class="muted">no position yet</span></div>
+          <div class="foot sub"><span id="rover-health" class="muted"></span></div>
         </article>
         <article class="unit scout" id="unit-scout">
           <header><svg class="ic"><use href="#i-scout"/></svg><b>Scout</b><span id="scout-chip" class="chip" hidden></span></header>
           <div class="nums"><span><em>x</em><b id="scout-x">&ndash;</b></span><span><em>y</em><b id="scout-y">&ndash;</b></span><span><em>z</em><b id="scout-z">&ndash;</b></span></div>
           <div class="foot"><div class="battery" id="battery" title="Battery"><i></i><i></i><i></i><i></i><i></i></div><span id="scout-batt" class="muted">&ndash;</span></div>
+          <div class="foot sub"><span id="scout-health" class="muted"></span></div>
         </article>
         <article class="unit target" id="unit-target">
           <header><svg class="ic"><use href="#i-target"/></svg><b>Target</b><span class="chip ghost">truth</span></header>

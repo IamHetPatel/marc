@@ -18,7 +18,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requi
 
 The dashboard opens at http://localhost:8002/. Mix and match: `start.py floor --drone mock` (real rover, simulated
 drone), `--rover <ep-ip>` (skip the search), `--drone http://<laptop>:8001` (drone server on another laptop),
-`--camera 0` (railing camera). A piece that cannot start (missing package, no robot) is reported in one line and the
+`--camera 0` (cage camera on this PC). Webcam on another laptop on the hotspot: run `python camera/stream_webcam.py` there (`pip install opencv-python`), then `start.py floor --camera http://<that-laptop-ip>:8003`. A piece that cannot start (missing package, no robot) is reported in one line and the
 rest keeps running; the dashboard shows that robot offline with the reason. Ctrl-C stops the rover and lands the
 scout before shutting down. Place the rover on the start cross and click **Manual control → Rover is on the start
 cross** to anchor its position. Plan and status of the integration: [docs/integration-plan.md](docs/integration-plan.md).

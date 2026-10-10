@@ -4,6 +4,7 @@ Frame: metres in the drone's Lighthouse frame. Yaw in degrees at every boundary.
 """
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -75,6 +76,7 @@ class Overhead(BaseModel):
     positions; they give the pixel -> metre homography. The rover carries one more tag on its top plate."""
     dictionary: str = "DICT_4X4_50"
     camera_height_m: float = 2.5             # lens above the floor; corrects parallax for things above the floor
+    camera_floor_xy: Optional[list] = None   # floor point straight below the lens; None = straight-down camera
     floor_tags: dict = Field(default_factory=dict)      # tag id (str) -> [x, y] of the tag centre, metres
     rover_tag_id: int = 10
     rover_tag_height_m: float = 0.3          # rover tag above the floor
@@ -111,7 +113,8 @@ class Arena(BaseModel):
 
 
 def load_arena(path: Optional[str] = None) -> Arena:
-    raw = json.loads(Path(path or Path(__file__).with_name("arena.json")).read_text())
+    """`path`, else $ARENA (e.g. manager/arena.floor.json for the real floor), else the mock/test arena.json."""
+    raw = json.loads(Path(path or os.getenv("ARENA") or Path(__file__).with_name("arena.json")).read_text())
     cage = raw["drone_cage"]
     plate = raw.get("plate_offset", {})
     return Arena(

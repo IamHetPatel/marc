@@ -6,8 +6,10 @@ It does three jobs, all in the Lighthouse frame (metres):
   * rover pose   one more tag on the rover's top plate gives an absolute x, y, yaw (localization.py uses it as a fix)
   * locate       Gemini points at a described object in the frame; the point goes through the homography
 
-Things above the floor (the rover tag) look further from the camera's nadir than they are. With the camera pointing
-straight down the nadir is the image centre, and scaling by (1 - h / camera_height) towards it removes that parallax.
+The camera can hang anywhere (ceiling, or a railing above one edge looking down at an angle): the floor tags fit a
+homography for any view of a flat floor. Things above the floor (the rover tag) look further from the camera's nadir
+(the floor point straight below the lens) than they are; scaling by (1 - h / camera_height) towards it removes that
+parallax. For a straight-down camera the nadir is the image centre; otherwise set `camera_floor_xy`.
 
     python -m manager.overhead tags [DIR]               print-ready PNGs of the floor tags and the rover tag
     python -m manager.overhead check [CAM] [--save F]   open the camera, report calibration and the rover pose
@@ -197,8 +199,8 @@ class OverheadCamera:
         if H is None:
             raise OverheadError(self._uncalibrated())
         x, y = _apply(H, col, row)
-        if height > 0 and frame is not None:
-            nx, ny = _apply(H, frame.shape[1] / 2, frame.shape[0] / 2)
+        if height > 0 and (self.cfg.camera_floor_xy or frame is not None):
+            nx, ny = self.cfg.camera_floor_xy or _apply(H, frame.shape[1] / 2, frame.shape[0] / 2)
             k = max(0.0, 1.0 - height / self.cfg.camera_height_m)
             x, y = nx + (x - nx) * k, ny + (y - ny) * k
         return x, y

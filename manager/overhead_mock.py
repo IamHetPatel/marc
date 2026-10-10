@@ -28,11 +28,13 @@ class SyntheticView:
         self.k = min(width / (b.x1 - b.x0 + 2 * margin_m), height / (b.y1 - b.y0 + 2 * margin_m))   # px per metre
         self.cx, self.cy = (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2
         self.camera_height_m = arena.overhead.camera_height_m
+        self.nadir = arena.overhead.camera_floor_xy or (self.cx, self.cy)    # an angled camera's parallax points away from it
 
     def to_px(self, x: float, y: float, height: float = 0.0) -> tuple:
         """Where a point `height` above the floor at (x, y) shows up: further from the nadir than its footprint."""
         s = 1.0 / max(1e-6, 1.0 - height / self.camera_height_m)
-        x, y = self.cx + (x - self.cx) * s, self.cy + (y - self.cy) * s
+        nx, ny = self.nadir
+        x, y = nx + (x - nx) * s, ny + (y - ny) * s
         return self.width / 2 + (x - self.cx) * self.k, self.height / 2 - (y - self.cy) * self.k
 
 

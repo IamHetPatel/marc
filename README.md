@@ -164,17 +164,9 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 ⚠️ `fleet.py` sends `y = SIGN_Y * …` because the RoboMaster SDK treats **+y as right** while `brain.py` documents `left_m`. The two files disagree about which side is positive. The rover server must pick one convention and document it.
 ⚠️ `/drive` is open loop and blocking in the plan. `/speed` must auto-expire after `t`, so a dropped Wi-Fi/5G link stops the robot instead of leaving it driving.
 
-### Suggested target shape for the AI manager 🟡
+### AI manager 🟡
 
-```
-POST /mission  {"text": "..."}      → LLM drafts plan, status = "awaiting_approval"
-POST /approve  {"edits": "..."?}    → executes (optionally after a human edit)
-POST /stop                          → cancel + call every robot's /stop and /land
-GET  /state                         → {status, plan[], current_step, robots{name:{pose,battery?}},
-                                        found[], last_image_url, log[]}
-```
-
-Run the mission in a background thread; keep the `chat` object alive between turns so "skip the left side" can be sent as a new user message to the same session. `/stop` must work from any state and must not depend on the LLM.
+Full design, the `/state` contract for the dashboard, and the API asks to the rover and drone squads: **[docs/ai-manager-plan.md](docs/ai-manager-plan.md)**. That file is the source of truth for anything on `:8002`.
 
 ---
 

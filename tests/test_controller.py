@@ -340,3 +340,35 @@ def test_supervisor_errors_fall_back_to_rules_and_the_mission_still_finishes(mak
     st = run_to_end(c, "m")
     assert st["mission"]["status"] == "done", st["mission"]["error"]       # rules keep the mission moving
     assert any("rule-based" in m["text"] for m in st["messages"] if m["role"] == "ai")
+
+
+def test_a_missing_target_drone_never_trips_the_watchdog(make_ctrl):
+    from manager.adapters.base import RobotError
+    c = make_ctrl()
+    c.store.set_status("running")                                  # pretend a mission is moving robots
+    real = c.base_ctx.drone.pose
+
+    def pose(cf="scout"):
+        if cf == "target":
+            raise RobotError("target link down")
+        return real(cf)
+
+    c.base_ctx.drone.pose = pose
+    for _ in range(c.cfg.watchdog_fails * 3):
+        c.monitor.poll()
+    assert c.store.status == "running"
+    assert c.store.robots["target"]["online"] is False and c.store.robots["drone"]["online"] is True
+
+
+def test_a_dead_scout_still_trips_the_watchdog(make_ctrl):
+    from manager.adapters.base import RobotError
+    c = make_ctrl()
+    c.store.set_status("running")
+
+    def down(cf="scout"):
+        raise RobotError("no radio")
+
+    c.base_ctx.drone.pose = down
+    for _ in range(c.cfg.watchdog_fails):
+        c.monitor.poll()
+    assert c.store.status == "stopped" and any("Watchdog" in m.text for m in c.store.messages)

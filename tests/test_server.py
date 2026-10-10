@@ -103,3 +103,11 @@ def test_telemetry_monitor_fills_robot_status(client):
     assert st["robots"]["rover"]["pose_source"] == "start_cross+odometry"           # no docking: no drone fix
     assert st["robots"]["drone"]["state"] == "landed" and st["robots"]["drone"]["battery_v"] > 3.3
     assert st["metrics"]["rover_rtt_ms"] is not None
+
+
+def test_the_target_crazyflie_shows_up_as_ground_truth(client):
+    st = poll(client, lambda s: s["robots"]["target"].get("online"))
+    assert st["robots"]["target"]["pose"] == {"x": 2.4, "y": 1.1, "z": 0.0}
+    client.ctrl.world.objects[0]["x"] = 2.0                           # someone carries the wreck
+    st = poll(client, lambda s: s["robots"]["target"]["pose"]["x"] == 2.0)
+    assert st["robots"]["target"]["online"] is True

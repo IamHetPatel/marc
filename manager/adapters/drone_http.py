@@ -10,11 +10,11 @@ class DroneHttp:
     def rtt_ms(self):
         return self.http.last_rtt_ms
 
-    def pose(self) -> dict:
-        return self.http.json("/pose", timeout=2.0)
+    def pose(self, cf: str = "scout") -> dict:
+        return self.http.json("/pose", timeout=2.0, cf=cf)
 
-    def takeoff(self) -> dict:
-        return self.http.json("/takeoff", timeout=15.0)
+    def takeoff(self, z: float = 0.6) -> dict:
+        return self.http.json("/takeoff", timeout=15.0, z=z)
 
     def goto(self, x, y, z) -> dict:
         return self.http.json("/goto", timeout=30.0, x=x, y=y, z=z)

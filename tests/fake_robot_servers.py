@@ -52,12 +52,12 @@ def drone_app(drone):
     app = FastAPI()
 
     @app.get("/pose")
-    def pose():
-        return drone.pose()
+    def pose(cf: str = "scout"):
+        return drone.pose(cf)
 
     @app.get("/takeoff")
-    def takeoff():
-        return drone.takeoff()
+    def takeoff(z: float = 0.6):
+        return drone.takeoff(z)
 
     @app.get("/goto")
     def goto(x: float, y: float, z: float):

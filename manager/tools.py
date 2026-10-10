@@ -36,6 +36,9 @@ FINDING_STANDOFF_M = 0.6        # stop this far short of a drone finding so the 
 INSPECT_FINDING_RADIUS_M = 1.5
 
 
+LOCATION_ACTIONS = {"rover_goto", "drone_scan", "drone_mark", "drone_search"}     # args["target"] is a place
+
+
 class UnresolvedRef(Exception):
     def __init__(self, kind: str, ref: str):
         super().__init__(f"cannot resolve {ref!r} ({kind})")
@@ -134,7 +137,7 @@ def _location(ctx: Ctx, args: dict) -> dict:
 def check_refs(ctx: Ctx, name: str, args: dict) -> Optional[UnresolvedRef]:
     """Used by the executor before running a step: a reference that does not resolve yet needs a supervisor
     checkpoint, not a guess."""
-    if name in ("rover_goto", "drone_scan") and args.get("target") is not None:
+    if name in LOCATION_ACTIONS and args.get("target") is not None:
         try:
             resolve_location(ctx, args["target"])
         except UnresolvedRef as e:
@@ -172,6 +175,29 @@ def succeeded(name: str, result: dict) -> bool:
 
 
 # ---------------------------------------------------------------- the dispatcher
+def _separation_violation(ctx: Ctx, name: str, args: dict) -> Optional[str]:
+    """Without docking nothing rides on the rover, so the rule is geometric: a drone flying lower than the mark
+    height must stay `separation_m` (x/y) away from wherever the rover is going. Fails open if a robot does not
+    answer; the watchdog owns that case."""
+    try:
+        d = ctx.drone.pose()
+        if d.get("state") != "flying" or d.get("z", 99.0) >= ctx.cfg.mark_z - 0.1:
+            return None
+        if name == "rover_goto":
+            loc = _location(ctx, args)
+            dest = (loc["x"], loc["y"])
+        else:                                       # turning or creeping in place: it stays where it is
+            p = ctx.loc.rover_pose()
+            dest = (p.x, p.y)
+    except (RobotError, UnresolvedRef):
+        return None
+    gap = distance(dest[0], dest[1], d["x"], d["y"])
+    if gap < ctx.cfg.separation_m:
+        return (f"the scout is flying low (z={d['z']:.2f} m) only {gap:.2f} m from where the rover is going; "
+                f"raise it to {ctx.cfg.mark_z} m (drone_mark) or land it first")
+    return None
+
+
 def run_action(ctx: Ctx, name: str, args: dict) -> dict:
     spec = REGISTRY.get(name)
     if spec is None:
@@ -182,8 +208,12 @@ def run_action(ctx: Ctx, name: str, args: dict) -> dict:
         return _err("cancelled")
     if spec.mentor and (msg := ctx.safety.mentor_gate()):
         return _err(msg, blocked="mentor")
-    if spec.moves_rover and ctx.drone_out:
-        return _err("the drone is out; dock or land it before moving the rover", blocked="drone_out")
+    if spec.moves_rover:
+        if ctx.cfg.dock_mode:
+            if ctx.drone_out:
+                return _err("the drone is out; dock or land it before moving the rover", blocked="drone_out")
+        elif (msg := _separation_violation(ctx, name, args)):
+            return _err(msg, blocked="separation")
     if spec.fault and ctx.faults is not None and ctx.faults.hit(spec.fault):
         return _err(f"injected failure ({spec.fault})", injected=True)
     try:
@@ -230,6 +260,49 @@ def drone_scan(ctx: Ctx, args: dict) -> dict:
                   else "Drone scan found nothing in that area.")
     return {"ok": True, "clipped": clipped, "area": [rect.x0, rect.y0, rect.x1, rect.y1],
             "findings": [f.model_dump(include={"id", "x", "y", "dz", "by"}) for f in found]}
+
+
+def _brief_pose(ctx: Ctx) -> dict:
+    p = ctx.drone.pose()
+    return {k: p.get(k) for k in ("x", "y", "z", "state")}
+
+
+@action("drone", mentor=True)
+def drone_takeoff(ctx: Ctx, args: dict) -> dict:
+    """Take the scout drone off and hover at search height. Use it before manual flying; drone_search and
+    drone_mark take off by themselves. Land it again with drone_land. Returns: {pose}."""
+    if (msg := ctx.safety.drone_battery(ctx.drone.pose().get("battery_v"))):
+        return _err(msg)
+    res = _norm(ctx.drone.takeoff(ctx.cfg.search_z))
+    if res["ok"]:
+        ctx.drone_out = True
+        res["pose"] = _brief_pose(ctx)
+    return res
+
+
+@action("drone", needs=(("target",), ("x", "y")), mentor=True)
+def drone_mark(ctx: Ctx, args: dict) -> dict:
+    """Fly the scout drone over a spot and hover there, so everyone (and the rover) can see where it is.
+    The spot is also registered as a finding, so later steps can refer to it as "$finding.<id>".
+    The drone stays in the air; land it with drone_land when the rover has arrived.
+    Args: target = "$finding.<id>" | "$zone.<name>" | "x,y", or x, y in metres.
+    Returns: {pose, finding_id}."""
+    loc = _location(ctx, args)
+    if (msg := ctx.safety.drone_target(loc["x"], loc["y"], ctx.cfg.mark_z)):
+        return _err(msg)
+    if (msg := ctx.safety.drone_battery(ctx.drone.pose().get("battery_v"))):
+        return _err(msg)
+    ctx.drone_out = True
+    if ctx.drone.pose().get("state") != "flying":
+        up = _norm(ctx.drone.takeoff(ctx.cfg.search_z))
+        if not up["ok"]:
+            return up
+    res = _norm(ctx.drone.goto(loc["x"], loc["y"], ctx.cfg.mark_z))
+    if not res["ok"]:
+        return res
+    (finding,) = ctx.store.add_findings([{"x": loc["x"], "y": loc["y"], "by": "scout"}])
+    ctx.store.say("ai", f"Scout is hovering over {finding.id} at ({loc['x']:.1f}, {loc['y']:.1f}).")
+    return {"ok": True, "pose": _brief_pose(ctx), "finding_id": finding.id}
 
 
 @action("drone", needs=(("x", "y", "z"),), mentor=True)

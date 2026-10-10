@@ -266,6 +266,14 @@ class Monitor(threading.Thread):
             self.fails["drone"] = 0
         except RobotError:
             self._fail("drone")
+        try:                                        # ground truth for the dashboard; never feeds the watchdog
+            t = ctx.drone.pose(cf="target")
+            if t.get("ok", True) is False:
+                store.merge_robot("target", online=False)
+            else:
+                store.merge_robot("target", online=True, pose={k: t.get(k) for k in ("x", "y", "z")})
+        except RobotError:
+            store.merge_robot("target", online=False)
         for name in ("rover", "drone"):
             rtt = getattr(getattr(ctx, name), "rtt_ms", None)
             if rtt is not None:

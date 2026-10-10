@@ -45,6 +45,13 @@ def test_clients_round_trip(stack):
     assert ctx.drone.pose()["state"] == "landed" and ctx.rover.rtt_ms is not None
 
 
+def test_drone_client_passes_cf_and_takeoff_height(stack):
+    ctx, world, *_ = stack
+    assert ctx.drone.pose(cf="target") == {"ok": True, "x": 2.4, "y": 1.1, "z": 0.0, "state": "landed"}
+    assert ctx.drone.takeoff(z=0.8)["ok"] and world.drone["z"] == 0.8
+    ctx.drone.land()
+
+
 def test_speed_sign_convention_survives_the_wire(stack):
     """Manager says +y = left. The fake server speaks SDK (+y = right). With the default
     rover_speed_y_sign=-1 a strafe-left command must move the rover left."""

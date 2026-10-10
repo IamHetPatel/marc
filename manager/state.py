@@ -35,7 +35,8 @@ class Store:
             self.log: list[dict] = []
             self.images: "OrderedDict[str, bytes]" = OrderedDict()
             if not hasattr(self, "robots"):          # live telemetry survives a new mission
-                self.robots: dict = {"rover": {"online": False}, "drone": {"online": False}}
+                self.robots: dict = {"rover": {"online": False}, "drone": {"online": False},
+                                     "target": {"online": False}}
                 self.metrics: dict = {}
             self.current_step: Optional[str] = None
             self.last_image_id: Optional[str] = None

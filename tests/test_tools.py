@@ -21,7 +21,9 @@ def scan_and_recover(ctx):
 
 # ---------------------------------------------------------------- validation
 def test_every_action_has_a_docstring_for_the_prompt():
-    assert len(REGISTRY) == 13
+    assert {"drone_scan", "drone_goto", "drone_dock", "drone_land", "drone_takeoff", "drone_mark", "rover_goto",
+            "rover_search", "rover_approach", "rover_inspect", "rover_grip", "rover_check_grip", "rover_arm",
+            "report", "ask_human"} <= set(REGISTRY)
     for spec in REGISTRY.values():
         assert spec.doc, f"{spec.name} needs a docstring: it is the planner prompt"
     assert "drone_scan" in vocabulary_text()

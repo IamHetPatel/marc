@@ -48,10 +48,12 @@ class RoverAdapter(Protocol):
 
 @runtime_checkable
 class DroneAdapter(Protocol):
-    def pose(self) -> dict:
-        """{x, y, z, yaw, battery_v, state: docked|flying|landed} in the Lighthouse frame."""
+    def pose(self, cf: str = "scout") -> dict:
+        """{ok, x, y, z, yaw, battery_v, state: docked|flying|landed} in the Lighthouse frame.
+        cf="target" is the second Crazyflie (the 'crashed drone'): {ok, x, y, z, state}, or {ok: false} if absent."""
 
-    def takeoff(self) -> dict: ...
+    def takeoff(self, z: float = 0.6) -> dict:
+        """Take off and hover at height z (m)."""
 
     def goto(self, x: float, y: float, z: float) -> dict: ...
 

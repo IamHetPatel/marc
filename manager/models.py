@@ -164,6 +164,7 @@ class MissionInfo(BaseModel):
     status: MissionStatus = "idle"
     plan_version: int = 0
     fallback: bool = False
+    source: Literal["ai", "fallback", "scenario", "manual"] = "ai"   # where the plan came from (additive)
     reason: str = ""                        # the AI's latest one-line explanation (additive)
     pending_question: Optional[str] = None  # set while an ask_human step waits for /change (additive)
     error: Optional[str] = None             # why the mission failed (additive)

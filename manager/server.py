@@ -5,6 +5,7 @@
 
 Run:  ROVER=mock DRONE=mock uvicorn manager.server:app --port 8002
 """
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -13,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .controller import Conflict, Controller
+from .models import StepDraft
+from .scenarios import UnknownScenario, list_scenarios
 from .tools import validate_step
 
 
@@ -32,6 +35,11 @@ class MentorBody(BaseModel):
     present: bool
 
 
+class PlanBody(BaseModel):
+    title: str
+    steps: list[StepDraft]
+
+
 class ManualBody(BaseModel):
     robot: str
     action: str
@@ -49,6 +57,12 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         else:
             app.state.ctrl = controller
         app.state.ctrl.start()
+        if owns and app.state.ctrl.cfg.scenario:
+            try:
+                app.state.ctrl.load_scenario(app.state.ctrl.cfg.scenario)
+            except Exception:                    # noqa: BLE001  a bad SCENARIO must not keep the server from starting
+                logging.getLogger("manager.server").exception("could not load scenario %r",
+                                                              app.state.ctrl.cfg.scenario)
         yield
         app.state.ctrl.shutdown()
 
@@ -84,6 +98,23 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
     def change(body: ChangeBody):
         guarded(ctrl().change, body.text)
         return {"ok": True}
+
+    @app.post("/plan")
+    def plan(body: PlanBody):
+        mission_id = guarded(ctrl().submit_plan, body.title, body.steps, "manual")
+        return {"ok": True, "mission_id": mission_id}
+
+    @app.get("/scenarios")
+    def scenarios():
+        return list_scenarios()
+
+    @app.post("/scenarios/{name}/load")
+    def load(name: str):
+        try:
+            mission_id = guarded(ctrl().load_scenario, name)
+        except UnknownScenario as e:
+            raise HTTPException(status_code=404, detail=f"no scenario named {name!r}") from e
+        return {"ok": True, "mission_id": mission_id}
 
     @app.post("/manual", status_code=202)
     def manual(body: ManualBody):

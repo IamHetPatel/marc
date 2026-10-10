@@ -15,7 +15,9 @@ from typing import Optional
 from .adapters.base import RobotError
 from .executor import Budget, Executor
 from .llm import call_with_timeout
-from .planner import Planner, drafts_to_steps
+from .detector import Target
+from .planner import Planner, drafts_to_steps, validate_drafts
+from .scenarios import load_scenario
 from .supervisor import Supervisor
 from .tools import run_action, succeeded
 
@@ -31,6 +33,14 @@ class Conflict(Exception):
 
 class StaleApproval(Conflict):
     """/approve named a plan version that is no longer the current one (HTTP 409)."""
+
+
+class InvalidPlan(ValueError):
+    """A submitted plan failed validation (HTTP 422). `problems` says what is wrong, in plain words."""
+
+    def __init__(self, problems: list):
+        super().__init__("; ".join(problems))
+        self.problems = problems
 
 
 class Controller:
@@ -60,6 +70,46 @@ class Controller:
             mission_id = self.store.new_mission(text)
             self._spawn_plan(text, None, None)
             return mission_id
+
+    def submit_plan(self, title: str, drafts: list, source: str = "manual") -> str:
+        """Same as start_mission, minus the planner: the steps come from the caller (a scenario file or the
+        dashboard). Validated first, so a bad plan never becomes a mission. Approve works as usual."""
+        problems = validate_drafts(drafts, dock_mode=self.cfg.dock_mode)
+        if problems:
+            raise InvalidPlan(problems)
+        with self._lock:
+            if self.store.status not in IDLE_STATES:
+                raise Conflict(f"a mission is already {self.store.status}; stop or reset it first")
+            self._new_epoch()
+            self.budget = Budget()
+            mission_id = self.store.new_mission(title)
+            self.store.restart_step_ids()
+            self.store.set_plan(drafts_to_steps(self.store, drafts))
+            self.store.set_status("awaiting_approval", source=source, fallback=False, pending_question=None)
+            version = self.store.mission.plan_version
+        if self.auto_approve:
+            try:
+                self.approve(version)
+            except Conflict:
+                pass
+        return mission_id
+
+    def load_scenario(self, name: str) -> str:
+        """Register the scenario's targets (detector, and the mock world if there is one), then submit its scripted
+        plan, or start an AI mission from its sentence. Raises scenarios.UnknownScenario."""
+        sc = load_scenario(name)
+        with self._lock:
+            if self.store.status not in IDLE_STATES:
+                raise Conflict(f"a mission is already {self.store.status}; stop or reset it first")
+            self.base_ctx.detector.set_targets([Target(id=t.id, kind=t.kind, source=t.source, x=t.x, y=t.y)
+                                                for t in sc.targets])
+            if self.world is not None and sc.targets:
+                with self.world.lock:
+                    self.world.held = None
+                    self.world.objects[:] = [t.mock_object() for t in sc.targets]
+        if sc.plan:
+            return self.submit_plan(sc.title, sc.plan, source="scenario")
+        return self.start_mission(sc.mission)
 
     def approve(self, plan_version: int):
         with self._lock:
@@ -181,7 +231,7 @@ class Controller:
             self.store.restart_step_ids()
             self.store.set_plan(drafts_to_steps(self.store, result.drafts), keep_previous=previous is not None)
             self.store.set_status("awaiting_approval", fallback=result.fallback, reason=result.summary,
-                                  pending_question=None)
+                                  source="fallback" if result.fallback else "ai", pending_question=None)
             if result.summary:
                 self.store.say("ai", result.summary)
             version = self.store.mission.plan_version

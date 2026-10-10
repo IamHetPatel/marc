@@ -1,0 +1,13 @@
+# Tier T4: the scout really searches field A with its (simulated) downward camera instead of knowing the spot.
+name: t4_search_field_a
+title: "Scout searches field A, rover goes to what it finds"
+mission: "A hostile drone crashed somewhere in field A. Search the field, then drive the rover to whatever the scout finds."
+targets:
+  - {id: t1, kind: hostile_drone, source: live, x: 2.4, y: 1.1}
+plan:
+  - {robot: drone, action: drone_search, target: "$zone.field_a", why: "Scout flies a search pattern over field A"}
+  - {robot: drone, action: drone_mark, target: "$finding.f1", why: "Scout hovers over what it found so everyone can see it"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to the marked spot (stops 0.6 m short)"}
+  - {robot: drone, action: drone_land, why: "Scout lands so the rover can work"}
+  - {robot: rover, action: rover_inspect, question: "What is in front of the robot?", why: "Camera checks the object"}
+  - {robot: manager, action: report, text: "Search complete: the object was found and photographed.", why: "Tell the operator"}

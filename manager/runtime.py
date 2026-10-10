@@ -46,12 +46,14 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     trust_drone_fix = cfg.dock_mode and (mock_rover or not mock_drone)
     overhead_fix = overhead is not None and not mock_rover and cfg.overhead_cam != "mock"
     loc = Localization(rover, drone, arena, clock, use_drone_fix=trust_drone_fix,
-                       overhead=overhead if overhead_fix else None)
+                       overhead=overhead if overhead_fix else None, rider=cfg.rover_rider)
     perception = make_perception(cfg, arena, llm, world if mock_rover else None)
     safety = Safety(cfg, arena, store, rover, drone)
     ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone, loc=loc, perception=perception,
               safety=safety, clock=clock, faults=faults, detector=build_detector(cfg, drone, overhead),
               overhead=overhead)
+    if cfg.rover_rider == "target" and hasattr(ctx.detector, "live_ok"):
+        ctx.detector.live_ok = False            # the target Crazyflie rides on the rover: it is not the wreck
     return ctx, world
 
 

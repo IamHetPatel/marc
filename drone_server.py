@@ -40,6 +40,7 @@ PORT = int(os.getenv("PORT", "8001"))
 # Default = the overlap of those corners, 0.3 m in from each wall.
 DEFAULT_CAGE = "-1.05,-0.41,1.66,0.88,1.2"
 SANE_MARGIN_M = 1.5  # a pose this far outside the cage means Lighthouse tracking is lost, not a real position
+TAKEOFF_MARGIN_M = 0.3  # takeoff is a vertical lift, so it may start up to the measured walls (the cage is inset 0.3 m)
 
 
 def _load_cage():
@@ -50,9 +51,10 @@ def _load_cage():
 CAGE = _load_cage()
 
 
-def _outside_cage(x, y, z=None):
-    """Error string if the point is outside the geofence, else None."""
-    if not (CAGE["x0"] <= x <= CAGE["x1"] and CAGE["y0"] <= y <= CAGE["y1"]):
+def _outside_cage(x, y, z=None, margin=0.0):
+    """Error string if the point is outside the geofence (grown by margin), else None."""
+    m = margin
+    if not (CAGE["x0"] - m <= x <= CAGE["x1"] + m and CAGE["y0"] - m <= y <= CAGE["y1"] + m):
         return (f"({x:.2f}, {y:.2f}) is outside the cage x {CAGE['x0']}..{CAGE['x1']}, "
                 f"y {CAGE['y0']}..{CAGE['y1']} (set CAGE env if the frame differs)")
     if z is not None and not 0.1 <= z <= CAGE["z_max"]:
@@ -240,8 +242,8 @@ class Scout:
             return f"battery {self.link.battery_v} V is below {MIN_BATTERY_V} V"
         if not (snap := self.pose())["ok"]:
             return f"refusing takeoff: {snap['error']}"
-        if (err := _outside_cage(snap["x"], snap["y"])):
-            return f"refusing takeoff: {err}"
+        if (err := _outside_cage(snap["x"], snap["y"], margin=TAKEOFF_MARGIN_M)):
+            return f"refusing takeoff: {err} (takeoff allows {TAKEOFF_MARGIN_M} m more)"
         self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
         print(f"Taking off from {self.takeoff_pos} to z={z}")
         if MOCK:

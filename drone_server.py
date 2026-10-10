@@ -18,6 +18,7 @@ scf = None
 pc = None
 drone_pose = {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0}
 zrange_samples = []
+stop_flag = False
 
 if not MOCK:
     import cflib.crtp
@@ -65,7 +66,8 @@ if not MOCK:
 @app.route("/takeoff")
 def takeoff():
     """Take off to a default height."""
-    global pc
+    global pc, stop_flag
+    stop_flag = False
     if MOCK:
         mock_pose["z"] = FLY_Z
         print(f"[MOCK] Drone took off to z={mock_pose['z']}m")
@@ -80,7 +82,8 @@ def takeoff():
 @app.route("/land")
 def land():
     """Land the drone."""
-    global pc
+    global pc, stop_flag
+    stop_flag = True
     if MOCK:
         mock_pose["z"] = 0.0
         print("[MOCK] Drone landed")
@@ -95,7 +98,8 @@ def land():
 @app.route("/goto")
 def goto():
     """Fly to an absolute coordinate in the shared frame."""
-    global pc
+    global pc, stop_flag
+    stop_flag = False
     x = float(request.args.get("x", mock_pose["x"] if MOCK else drone_pose["x"]))
     y = float(request.args.get("y", mock_pose["y"] if MOCK else drone_pose["y"]))
     z = float(request.args.get("z", mock_pose["z"] if MOCK else drone_pose["z"]))
@@ -119,7 +123,8 @@ def goto():
 @app.route("/scan")
 def scan():
     """Sweep an area and return coordinates of any objects found based on Z-range dip."""
-    global pc
+    global pc, stop_flag
+    stop_flag = False
     x0 = float(request.args.get("x0", 0.0))
     y0 = float(request.args.get("y0", 0.0))
     x1 = float(request.args.get("x1", 0.0))
@@ -149,10 +154,17 @@ def scan():
     zrange_samples.clear()
     
     for px, py in pts:
+        if stop_flag:
+            print("Scan aborted by emergency stop!")
+            if pc:
+                pc.land(0.0, 1.0)
+                pc = None
+            return jsonify({"status": "aborted", "objects_found_at": []})
         pc.go_to(px, py, FLY_Z)
         
-    pc.land(0.0, 1.0)
-    pc = None
+    if pc:
+        pc.land(0.0, 1.0)
+        pc = None
     
     # Process the scan to find obstacles
     if not zrange_samples:
@@ -170,6 +182,28 @@ def scan():
         
     return jsonify({"status": "ok", "objects_found_at": hits})
 
+@app.route("/dock")
+def dock():
+    """Return to origin and land (docking station)."""
+    global pc, stop_flag
+    stop_flag = True # abort any scans
+    
+    if MOCK:
+        mock_pose["x"] = 0.0
+        mock_pose["y"] = 0.0
+        mock_pose["z"] = 0.0
+        print("[MOCK] Drone docked.")
+        return jsonify({"status": "mock_ok"})
+        
+    if pc is None:
+        return jsonify({"status": "already_docked"})
+        
+    print("Docking (returning to 0,0)...")
+    pc.go_to(0.0, 0.0, FLY_Z)
+    pc.land(0.0, 1.0)
+    pc = None
+    return jsonify({"status": "ok"})
+
 @app.route("/pose")
 def pose():
     """Get the current position of the drone."""
@@ -179,5 +213,5 @@ def pose():
 
 if __name__ == "__main__":
     print(f"Starting Drone Server (MOCK={MOCK}) on port 8001...")
-    # Need to disable threading/reloading since cflib needs to stay on the main thread
-    app.run(host="0.0.0.0", port=8001, debug=False, use_reloader=False)
+    # Threading is required so /land can interrupt a blocking /scan loop
+    app.run(host="0.0.0.0", port=8001, threaded=True, debug=False, use_reloader=False)

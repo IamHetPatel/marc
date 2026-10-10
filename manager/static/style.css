@@ -258,6 +258,9 @@ a { color: inherit; }
 .nums em { font: 500 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-style: normal; }
 .nums b { font: 500 15px var(--mono); transition: color .3s; }
 .unit .foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 7px; font-size: 11.5px; line-height: 1.3; }
+.unit .foot.sub { margin-top: 0; padding-top: 3px; }           /* robot-server status: battery, camera, Lighthouse */
+.unit .foot.sub:has(> span:empty) { display: none; }
+.unit .foot.sub .bad { color: var(--warn); }
 .battery { display: inline-flex; gap: 2px; flex: none; }
 .battery i { width: 8px; height: 10px; border-radius: 1.5px; background: var(--line-strong); transition: background-color .4s; }
 .battery i.on { background: var(--good); } .battery.mid i.on { background: var(--warn); } .battery.low i.on { background: var(--crit); }

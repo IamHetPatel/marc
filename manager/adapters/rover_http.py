@@ -53,6 +53,10 @@ class RoverHttp:
     def pose(self) -> dict:
         return self.http.json("/pose", timeout=2.0)
 
+    def health(self) -> dict:
+        """{ok, battery (%), camera, last, mock}: rover/robot_server.py's status, for the dashboard."""
+        return self.http.json("/health", timeout=2.0)
+
     def speed(self, x, y, z, t) -> dict:
         return self.http.json("/speed", timeout=2.0, x=x, y=self.cfg.rover_speed_y_sign * y, z=z, t=t)
 

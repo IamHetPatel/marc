@@ -45,6 +45,9 @@ class RoverAdapter(Protocol):
     def stop(self) -> dict:
         """Zero velocity now."""
 
+    def health(self) -> dict:
+        """Server status for the dashboard (battery, camera). Never used for safety decisions."""
+
 
 @runtime_checkable
 class DroneAdapter(Protocol):
@@ -65,3 +68,6 @@ class DroneAdapter(Protocol):
 
     def dock(self) -> dict:
         """Land at the stored takeoff pose / plate height."""
+
+    def health(self) -> dict:
+        """Server status for the dashboard (radio link, Lighthouse deck and base stations)."""

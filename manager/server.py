@@ -5,6 +5,7 @@
     POST /manual {"robot","action","args"}   POST /plan {"title","steps"}   GET /scenarios   POST /scenarios/{name}/load
     GET /arena   GET /report                 GET /ui/ (the dashboard)       GET / -> /ui/
     GET /overhead.jpg (latest overhead webcam frame, annotated; 404 without OVERHEAD_CAM)
+    GET /rover/video  (the real rover's live MJPEG, relayed so the browser only ever talks to :8002; 404 for a mock)
 
 Run:  ROVER=mock DRONE=mock uvicorn manager.server:app --port 8002
 """
@@ -13,9 +14,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import requests
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -26,6 +28,7 @@ from .tools import validate_step
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"       # the dashboard: plain HTML / JS, no build step
+VIDEO_STALL_S = 10.0             # a rover stream with no bytes for this long is dropped (the page reconnects)
 
 
 class MissionBody(BaseModel):
@@ -174,6 +177,29 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         if data is None:
             raise HTTPException(status_code=404, detail="no overhead camera frame")
         return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/rover/video")
+    def rover_video():
+        base = ctrl().cfg.rover
+        if base == "mock":
+            raise HTTPException(status_code=404, detail="the rover is a mock: no live video")
+        try:
+            up = requests.get(base.rstrip("/") + "/video", stream=True, timeout=(2.0, VIDEO_STALL_S))
+        except requests.RequestException as e:
+            raise HTTPException(status_code=502, detail=f"rover video: {e}") from e
+        if up.status_code != 200:
+            up.close()
+            raise HTTPException(status_code=502, detail=f"rover video: HTTP {up.status_code}")
+
+        def relay():
+            try:
+                yield from up.iter_content(chunk_size=64 * 1024)
+            except requests.RequestException:
+                pass                                 # rover stalled or went away: end the stream, the page retries
+            finally:
+                up.close()
+        return StreamingResponse(relay(), media_type=up.headers.get("Content-Type", "multipart/x-mixed-replace"),
+                                 headers={"Cache-Control": "no-store"})
 
     app.mount("/ui", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
     return app

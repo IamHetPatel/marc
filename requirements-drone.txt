@@ -1,0 +1,2 @@
+flask>=2.2          # drone_server.py (:8001)
+cflib>=0.1.25       # Crazyflie radio; not imported with MOCK=1

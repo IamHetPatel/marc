@@ -196,6 +196,9 @@ class MockRover:
     def snapshot(self) -> bytes:
         return self.w.render()
 
+    def health(self) -> dict:
+        return {"ok": True, "mock": True, "camera": "mock"}
+
     def grip(self, action) -> dict:
         w = self.w
         with w.lock:
@@ -233,6 +236,9 @@ class MockDrone:
 
     def pose(self, cf: str = "scout") -> dict:
         return self.w.target_pose() if cf == "target" else self.w.drone_pose()
+
+    def health(self) -> dict:
+        return {"ok": True, "mock": True, "scout": "connected"}
 
     def takeoff(self, z: float = FLY_Z) -> dict:
         w = self.w

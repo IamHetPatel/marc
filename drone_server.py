@@ -31,6 +31,7 @@ SPEED = 0.3          # m/s for go_to durations (spec: <= 0.4)
 LANE_M = 0.4         # lawnmower lane spacing
 MIN_BATTERY_V = 3.3  # refuse takeoff below this
 POSE_STALE_S = 1.0   # no log packet for this long = pose not trustworthy
+CONNECT_TRIES = 3
 
 
 # Measured 2026-10-10 by walking the scout to the cage corners (Lighthouse frame, origin inside the cage):
@@ -84,9 +85,20 @@ class Link:
         from cflib.crazyflie.log import LogConfig
         from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
-        print(f"Connecting to {self.uri}...")
-        self.scf = SyncCrazyflie(self.uri, cf=Crazyflie(rw_cache="./cache"))
-        self.scf.open_link()
+        for attempt in range(1, CONNECT_TRIES + 1):    # a drone that just powered on needs a moment
+            print(f"Connecting to {self.uri} (attempt {attempt}/{CONNECT_TRIES})...")
+            self.scf = SyncCrazyflie(self.uri, cf=Crazyflie(rw_cache="./cache"))
+            try:
+                self.scf.open_link()
+                break
+            except Exception as e:                     # noqa: BLE001
+                print(f"  link failed: {e}")
+                if attempt == CONNECT_TRIES:
+                    raise RuntimeError(
+                        f"cannot reach {self.uri}. Check: drone powered and booted (LEDs on), battery, "
+                        "no cfclient or other script connected to it, radio not on a USB hub, drone within a "
+                        "few metres. `python3 scan_drones.py` lists the drones the radio can hear.") from e
+                time.sleep(2.0)
         print(f"Connected to {self.uri}")
         lg = LogConfig(name="state", period_in_ms=100)
         for var in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z", "stateEstimate.yaw", "pm.vbat"):

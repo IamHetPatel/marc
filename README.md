@@ -17,7 +17,7 @@ flowchart TB
     M[AI manager ✅ :8002<br/>/mission /approve /stop /state + dashboard]
     L{{LLM/VLM<br/>Gemini Robotics-ER 2<br/>tool calling}}
     A1[Rover adapter<br/>HTTP :8000]
-    A2[Drone adapter<br/>HTTP :8001 🟡 / cflib in-process ✅]
+    A2[Drone adapter<br/>HTTP :8001 drone_server.py ✅]
     A3[ROS adapter<br/>rosbridge websocket ✅]
     R1[RoboMaster EP<br/>rover/robot_server.py ✅]
     R2[Crazyflie scouts<br/>cflib + Lighthouse]
@@ -56,6 +56,8 @@ plan → (human approves) → act via tools → look (camera) → verify → con
 | [gesture_teleop.py](gesture_teleop.py) | Webcam hand gestures → `/speed`. | Manual override / demo extra. Not part of the AI loop. |
 | [rover/robot_server.py](rover/robot_server.py) | HTTP server (:8000) wrapping the EP's plaintext SDK; runs on any Mac/Linux laptop on the hotspot. Also serves a keyboard teleop page at `/`. `MOCK=1` runs it without hardware. | The rover API every file above calls. Setup: [rover/README.md](rover/README.md). |
 | [rover/control1.py](rover/control1.py) | The original stand-alone browser teleop (EP in AP mode). | Manual driving only; can't run alongside `robot_server.py` (the EP takes one controller). |
+| [drone_server.py](drone_server.py) | HTTP server (:8001) for the scout Crazyflie (and the target Crazyflie's pose) over cflib: preemptible flights, geofence `CAGE`, Lighthouse diagnostics in `/health`. `MOCK=1` without a radio. [scan_drones.py](scan_drones.py) lists the drones the radio hears; [calibration.yaml](calibration.yaml) is the Lighthouse base-station geometry. | The drone API the mothership calls. Install: `requirements-drone.txt`. |
+| [manager/](manager/) | The mothership (:8002): planner, executor, safety, telemetry, and the dashboard at `/ui/`. | Orchestrates both servers. Real floor: `ARENA=manager/arena.floor.json`. |
 
 All Python files use env vars for config; none take a config file.
 
@@ -146,7 +148,7 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 | AI manager `:8002` with `/mission /approve /stop /state` | ✅ in `manager/` (on mocks; not yet on real robots). `fleet.py::run` stays the one-shot reference | AI manager squad |
 | Human **approve / change / stop** gate | ✅ in `manager/` (plan → Approve → run, `409` on stale approvals, Stop from any state) | AI manager squad |
 | Re-plan on failure, live plan change ("skip the left side…") | ✅ in `manager/` (supervisor checkpoints + `/change`; the live change needs a Gemini key) | AI manager squad |
-| Dashboard reading `/state` | 🟡 Not in repo | Dashboard |
+| Dashboard reading `/state` | ✅ `manager/static/`, served at `/ui/`: map, plan, approvals, live rover video, robot health, manual control | Dashboard |
 | `MOCK=1` everywhere | 🟡 Done in `fleet.py`, `fleet_agent.py` and `manager/` (`ROVER=mock DRONE=mock`); missing in `brain.py` | AI manager squad |
 | Unified drone + rover on one map | ✅ in `fleet.py` via the rider trick; the digital-twin view is 🟡 | Shared-map squad |
 
@@ -174,7 +176,7 @@ HTTP `503` means the server is up but the EP didn't answer; a refused command is
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-manager.txt
-.venv/bin/python -m pytest                                   # ~300 tests on mock robots, ~13 s
+.venv/bin/python -m pytest                                   # ~360 tests on mock robots, ~30 s
 
 # the mothership: server + dashboard on :8002, fake robots, no API key needed
 ROVER=mock DRONE=mock MOCK_TIME_SCALE=10 .venv/bin/python -m manager.server
@@ -187,6 +189,20 @@ MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli "A hostile drone crashed in f
 # real robots, one env var each (mixed mode works); add GEMINI_API_KEY for AI planning
 ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv/bin/python -m manager.server
 ```
+
+#### On the real floor (three processes; any of them can be a mock)
+
+```bash
+# 1. rover: EP in STA mode on the hotspot (rover/README.md)
+ROBOT_HOST=<ep-ip> .venv/bin/python rover/robot_server.py                  # :8000   (MOCK=1 for a fake EP)
+# 2. drone: Crazyradio plugged in, base stations on (pip install -r requirements-drone.txt)
+.venv/bin/python drone_server.py                                            # :8001   (MOCK=1 for no radio)
+# 3. the mothership on the measured floor frame
+ARENA=manager/arena.floor.json ROVER=http://localhost:8000 DRONE=http://localhost:8001 .venv/bin/python -m manager.server
+open http://localhost:8002/          # live rover video, battery, Lighthouse status, manual control
+```
+
+Without `GEMINI_API_KEY` everything except reading the rover camera works (manual control, scripted plans up to the inspect step). The plan for the rest of the integration and the railing camera: [docs/integration-plan.md](docs/integration-plan.md).
 
 Three ways to get a plan, all through the same validation and safety (the AI is optional): type a mission (`POST /mission`, Gemini or the built-in plan), load a **scenario** from [scenarios/](scenarios/) (`POST /scenarios/{name}/load`, no AI), or run one action by hand (`POST /manual`, between missions). The gripper will not close on a hazardous finding until the operator answers *yes* to the authorization question; that gate is in code and applies to every plan source.
 
@@ -232,7 +248,8 @@ Env vars: `ROVER` / `DRONE` (`mock` or a URL), `DOCK_MODE=1` (old "drone rides t
 pip install google-genai requests          # everyone
 pip install cflib                          # drone laptop (mac: brew install libusb)
 pip install roslibpy                       # only for the ROS backup path
-pip install robomaster                     # rover laptop only: Windows, Python 3.8
+pip install -r rover/requirements.txt      # rover server (PyAV + Pillow), any laptop on the hotspot
+pip install -r requirements-drone.txt      # drone server (Flask + cflib)
 pip install mediapipe==0.10.14 opencv-python   # only for gesture_teleop
 
 export GEMINI_API_KEY=...

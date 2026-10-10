@@ -8,15 +8,13 @@ sends land, and returns at once. Motion calls that see a newer generation stop a
 Env:
   SCOUT_URI   radio URI of the flying drone (default: the one confirmed by cfclient)
   TARGET_URI  radio URI of the floor drone; empty = /pose?cf=target answers {"ok": false}
-  CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: drone_cage from manager/arena.json)
-  MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y"
+  CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: DEFAULT_CAGE, measured on the floor)
+  MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y" (default 1.0,0.3)
 """
-import json
 import math
 import os
 import threading
 import time
-from pathlib import Path
 
 from flask import Flask, jsonify, request
 
@@ -35,14 +33,16 @@ MIN_BATTERY_V = 3.3  # refuse takeoff below this
 POSE_STALE_S = 1.0   # no log packet for this long = pose not trustworthy
 
 
+# Measured 2026-10-10 by walking the scout to the cage corners (Lighthouse frame, origin inside the cage):
+# (2.06, -0.71), (1.96, 1.18), (-1.35, 1.48); the fourth corner read garbage (tracking lost), to re-measure.
+# Default = the overlap of those corners, 0.3 m in from each wall.
+DEFAULT_CAGE = "-1.05,-0.41,1.66,0.88,1.2"
+SANE_MARGIN_M = 1.5  # a pose this far outside the cage means Lighthouse tracking is lost, not a real position
+
+
 def _load_cage():
-    if os.getenv("CAGE"):
-        x0, y0, x1, y1, zmax = (float(v) for v in os.environ["CAGE"].split(","))
-        return {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "z_max": zmax}
-    try:
-        return json.loads((Path(__file__).parent / "manager" / "arena.json").read_text())["drone_cage"]
-    except (OSError, KeyError, ValueError):
-        return {"x0": 0.0, "y0": 0.0, "x1": 4.0, "y1": 3.0, "z_max": 1.2}
+    x0, y0, x1, y1, zmax = (float(v) for v in os.getenv("CAGE", DEFAULT_CAGE).split(","))
+    return {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "z_max": zmax}
 
 
 CAGE = _load_cage()
@@ -56,6 +56,12 @@ def _outside_cage(x, y, z=None):
     if z is not None and not 0.1 <= z <= CAGE["z_max"]:
         return f"z={z:.2f} is outside 0.1..{CAGE['z_max']}"
     return None
+
+
+def _sane(p):
+    m = SANE_MARGIN_M
+    return (CAGE["x0"] - m <= p["x"] <= CAGE["x1"] + m and CAGE["y0"] - m <= p["y"] <= CAGE["y1"] + m
+            and -0.5 <= p["z"] <= CAGE["z_max"] + m)
 
 
 class Link:
@@ -113,6 +119,9 @@ class Link:
             out["age_s"] = age
             if age is None or age > POSE_STALE_S:
                 out.update(ok=False, error=f"no pose from {self.uri} for {age}s")
+            elif not _sane(self.pose):
+                out.update(ok=False, error="pose is far outside the cage: Lighthouse tracking lost "
+                                           "(check the deck can see the base stations; power-cycle if it stays)")
         return out
 
 
@@ -165,6 +174,10 @@ class Scout:
             return None
         if self.link.battery_v is not None and self.link.battery_v < MIN_BATTERY_V:
             return f"battery {self.link.battery_v} V is below {MIN_BATTERY_V} V"
+        if not (snap := self.pose())["ok"]:
+            return f"refusing takeoff: {snap['error']}"
+        if (err := _outside_cage(snap["x"], snap["y"])):
+            return f"refusing takeoff: {err}"
         self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
         print(f"Taking off from {self.takeoff_pos} to z={z}")
         if MOCK:
@@ -327,7 +340,7 @@ scout = Scout(Link(SCOUT_URI, with_zrange=True))
 target = None
 if MOCK:
     target = Link("mock-target", with_zrange=False)
-    tx, ty = (float(v) for v in os.getenv("MOCK_TARGET", "2.4,1.1").split(","))
+    tx, ty = (float(v) for v in os.getenv("MOCK_TARGET", "1.0,0.3").split(","))
     target.pose.update(x=tx, y=ty)
     target.battery_v = 4.0
 elif TARGET_URI:

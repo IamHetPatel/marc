@@ -53,5 +53,7 @@ def build_controller(cfg: Optional[Config] = None, llm: Optional[LLM] = None, au
     store = Store()
     if llm is None and use_env_llm:
         llm = make_llm(cfg, on_latency=lambda ms: store.set_metric("llm_latency_ms_last", ms))
-    ctx, _world = build_ctx(cfg, store, llm)
-    return Controller(ctx, Planner(llm, ctx.arena), LLMSupervisor(llm, ctx.arena), auto_approve=auto_approve)
+    ctx, world = build_ctx(cfg, store, llm)
+    ctrl = Controller(ctx, Planner(llm, ctx.arena), LLMSupervisor(llm, ctx.arena), auto_approve=auto_approve)
+    ctrl.world = world                      # the MockWorld (or None); tests and demos poke it
+    return ctrl

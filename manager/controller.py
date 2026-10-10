@@ -44,6 +44,7 @@ class Controller:
         self._answer_event = threading.Event()
         self.budget = Budget()
         self.monitor = Monitor(self)
+        self.world = None                       # set by runtime.build_controller when anything is mocked
 
     # ------------------------------------------------------------ public API (what server.py calls)
     def start_mission(self, text: str) -> str:
@@ -121,7 +122,9 @@ class Controller:
         self.store.say("system", "Mentor present: drone unlocked." if present else "Mentor left: drone locked.")
 
     def start(self):
-        self.monitor.start()
+        """Start the telemetry monitor. Safe to call more than once."""
+        if self.monitor.ident is None:
+            self.monitor.start()
 
     def shutdown(self):
         self.monitor.halt()

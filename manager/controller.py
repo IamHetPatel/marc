@@ -224,6 +224,14 @@ class Controller:
         except (OSError, yaml.YAMLError) as e:
             log.warning("could not write the mission report: %s", e)
 
+    def rover_at_home(self):
+        """The rover was placed on the start cross: re-anchor its position there (wheel odometry drifts)."""
+        with self._lock:
+            if self.store.status in ("running", "replanning"):
+                raise Conflict("stop the mission before moving the rover's position")
+            self.base_ctx.loc.reanchor_home()
+            self.store.say("system", "Rover position reset to the start cross.")
+
     def set_mentor(self, present: bool):
         self.store.mentor_present = bool(present)
         self.store.event("mentor", present=bool(present))
@@ -430,7 +438,8 @@ def _brief_health(name: str, h: dict) -> dict:
     """The few /health fields the dashboard shows, so /state stays small."""
     if name == "rover":
         return {"battery_pct": h.get("battery"), "camera": h.get("camera"), "last": h.get("last"),
-                "mock": bool(h.get("mock")), "video": h.get("camera") == "live"}
+                "mock": bool(h.get("mock")), "video": h.get("camera") == "live",
+                "error": h.get("error") if h.get("ok") is False else None}
     lh = h.get("scout_lighthouse") or {}
     return {"link": h.get("scout"), "target": h.get("target"), "mock": bool(h.get("mock")),
             "lighthouse": lh.get("status"), "base_stations": lh.get("used"), "hint": lh.get("hint")}

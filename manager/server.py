@@ -5,6 +5,7 @@
     POST /manual {"robot","action","args"}   POST /plan {"title","steps"}   GET /scenarios   POST /scenarios/{name}/load
     GET /arena   GET /report                 GET /ui/ (the dashboard)       GET / -> /ui/
     GET /overhead.jpg (latest overhead webcam frame, annotated; 404 without OVERHEAD_CAM)
+    POST /rover/home  (the rover is on the start cross: re-anchor its position there)
     GET /rover/video  (the real rover's live MJPEG, relayed so the browser only ever talks to :8002; 404 for a mock)
 
 Run:  ROVER=mock DRONE=mock uvicorn manager.server:app --port 8002
@@ -152,6 +153,11 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
     @app.post("/stop")
     def stop():
         return {"ok": True, "robots": ctrl().stop()}
+
+    @app.post("/rover/home")
+    def rover_home():
+        guarded(ctrl().rover_at_home)
+        return {"ok": True}
 
     @app.post("/mentor")
     def mentor(body: MentorBody):

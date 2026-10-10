@@ -37,6 +37,9 @@ flowchart LR
 
 ## 3. Running it
 
+`python start.py demo | sim | floor` starts whatever is needed and skips (with a one-line reason) whatever cannot
+start; see the README's Getting started. By hand, the same three processes:
+
 ```bash
 ROBOT_HOST=<ep-ip> .venv/bin/python rover/robot_server.py      # :8000  rover (MOCK=1: fake EP)
 .venv/bin/python drone_server.py                                # :8001  drone (MOCK=1: no radio)

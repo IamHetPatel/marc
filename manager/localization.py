@@ -58,6 +58,11 @@ class Localization:
         self._docked = False
         self._lock = threading.RLock()          # monitor thread and goto loop both call rover_pose
 
+    def reanchor_home(self):
+        """The operator put the rover on the start cross: the next pose starts again from arena.home."""
+        with self._lock:
+            self.fix = None
+
     def rover_pose(self) -> LocalizedPose:
         """Raises RobotError if the rover itself is unreachable."""
         with self._lock:

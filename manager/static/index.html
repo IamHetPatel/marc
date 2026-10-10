@@ -243,6 +243,7 @@
             <div class="btn-row">
               <button type="button" class="btn" data-m='{"robot":"drone","action":"drone_takeoff","args":{}}'>Take off</button>
               <button type="button" class="btn" data-m='{"robot":"drone","action":"drone_land","args":{}}'>Land</button>
+              <button type="button" class="btn" data-m='{"robot":"drone","action":"drone_home","args":{}}' title="Fly back to where the scout first took off and land there">Back to pad</button>
             </div>
             <div class="coords">
               <label>x<input class="num" id="d-x" type="number" step="0.1" value="2.4"></label>
@@ -269,6 +270,10 @@
             </div>
             <div class="btn-row">
               <button type="button" class="btn" id="r-home" title="Click after placing the rover on the taped start cross">Rover is on the start cross</button>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn" id="r-anchor-target" title="Put the target Crazyflie on the rover's top plate, centred, nose to the rover's front, then click: the rover gets its true Lighthouse position and heading">Anchor from target CF</button>
+              <button type="button" class="btn" id="r-anchor-scout" title="Same, using the (landed) scout Crazyflie">Anchor from scout</button>
             </div>
             <div class="btn-row">
               <button type="button" class="btn" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"pick"}}'>Arm pick</button>

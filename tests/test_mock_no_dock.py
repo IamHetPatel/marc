@@ -10,7 +10,7 @@ from manager.runtime import build_ctx
 
 def test_config_defaults_and_env(monkeypatch):
     c = Config()
-    assert (c.dock_mode, c.search_z, c.mark_z, c.separation_m) == (False, 0.6, 1.0, 0.5)
+    assert (c.dock_mode, c.search_z, c.mark_z, c.separation_m) == (False, 0.6, 0.4, 0.5)
     assert (c.detector_fov_deg, c.detector_noise_m, c.detector_miss_p, c.scenario) == (60.0, 0.05, 0.05, "")
     monkeypatch.setenv("DOCK_MODE", "1")
     monkeypatch.setenv("SCENARIO", "t2_mark_and_drive")
@@ -43,11 +43,17 @@ def test_the_scout_takes_off_from_the_floor_and_lands_again(ctx):
     assert ctx.drone.pose()["z"] == FLY_Z
 
 
-def test_docking_is_disabled(ctx):
+def test_dock_without_a_plate_returns_to_the_launch_pad(ctx):
     r = ctx.drone.dock()
-    assert r["ok"] is False and r["error"] == "docking disabled"
+    assert r["ok"] is False and "no home recorded" in r["error"]           # never flew: nowhere to return to
+    pad = ctx.drone.pose()
+    assert pad["home"] is None
     ctx.drone.takeoff()
-    assert ctx.drone.dock()["ok"] is False and ctx.drone.pose()["state"] == "flying"
+    assert ctx.drone.pose()["home"] == {"x": pad["x"], "y": pad["y"]}      # like drone_server.py: first takeoff spot
+    ctx.drone.goto(2.0, 1.5, 0.6)
+    r = ctx.drone.dock()
+    p = ctx.drone.pose()
+    assert r["ok"] and r["docked"] and p["state"] == "landed" and (p["x"], p["y"], p["z"]) == (pad["x"], pad["y"], 0.0)
 
 
 def test_the_target_pose_is_readable_like_the_second_crazyflie(ctx):

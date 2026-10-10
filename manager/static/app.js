@@ -79,7 +79,7 @@
   /* ------------------------------------------------------------------ words people read */
   var ROBOT = { drone: "Scout", rover: "Rover", manager: "Mothership" };
   var LABEL = {
-    drone_search: "Search the field", drone_mark: "Mark the spot", drone_land: "Land the scout", drone_takeoff: "Take off",
+    drone_search: "Search the field", drone_mark: "Mark the spot", drone_land: "Land the scout", drone_home: "Back to the pad", drone_takeoff: "Take off",
     drone_goto: "Fly to a point", drone_scan: "Scan the area", drone_dock: "Dock on the rover",
     rover_goto: "Drive to", rover_search: "Look around", rover_approach: "Close in with the camera",
     rover_inspect: "Inspect it", rover_grip: "Gripper", rover_check_grip: "Check the grip", rover_arm: "Arm",
@@ -605,17 +605,37 @@
   }
 
   /* ------------------------------------------------------------------ map */
+  /* The map shows the arena's `view` (the whole net plus the launch pad, from /arena), grown to include any robot or
+     pad that turns up outside it: a scout taking off from outside the arena must stay on the map. */
+  var VIEW_MARGIN = 0.25;
+  function viewRect() {
+    var v = S.arena.view || S.arena.bounds, r = { x0: v.x0, y0: v.y0, x1: v.x1, y1: v.y1 };
+    (S.viewExtra || []).forEach(function (p) {
+      r.x0 = Math.min(r.x0, p[0] - VIEW_MARGIN); r.x1 = Math.max(r.x1, p[0] + VIEW_MARGIN);
+      r.y0 = Math.min(r.y0, p[1] - VIEW_MARGIN); r.y1 = Math.max(r.y1, p[1] + VIEW_MARGIN);
+    });
+    return r;
+  }
+  function inView(x, y) { var v = S.view; return x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1; }
   function geo() {
-    var b = S.arena.bounds;
+    var b = S.view;
     return { b: b, w: (b.x1 - b.x0) * SCALE + PADL + PADR, h: (b.y1 - b.y0) * SCALE + PADT + PADB };
   }
-  function sx(x) { return PADL + (x - S.arena.bounds.x0) * SCALE; }
-  function sy(y) { return PADT + (S.arena.bounds.y1 - y) * SCALE; }
-  function mx(px) { return (px - PADL) / SCALE + S.arena.bounds.x0; }
-  function my(py) { return S.arena.bounds.y1 - (py - PADT) / SCALE; }
+  function sx(x) { return PADL + (x - S.view.x0) * SCALE; }
+  function sy(y) { return PADT + (S.view.y1 - y) * SCALE; }
+  function mx(px) { return (px - PADL) / SCALE + S.view.x0; }
+  function my(py) { return S.view.y1 - (py - PADT) / SCALE; }
+  function padPoint() {
+    var d = S.s && S.s.robots.drone, h = d && d.home;
+    if (h && typeof h.x === "number") return h;
+    return S.arena.launch_pad || null;
+  }
 
   function buildMap() {
-    var g = geo(), svg = $("map"), a = S.arena, b = g.b;
+    S.view = viewRect();
+    S.seenFirst = {};
+    ["search", "trail", "pad"].forEach(function (k) { delete S.cache[k]; });     // redraw these on the new scale
+    var g = geo(), svg = $("map"), a = S.arena, b = g.b, ar = a.bounds;
     clear(svg);
     svg.setAttribute("viewBox", "0 0 " + g.w + " " + g.h);
     var step = 0.5 * SCALE;
@@ -636,7 +656,8 @@
       st.append(sv("path", { class: "cage-tick", d: "M" + (k[0] + k[2] * 12) + " " + k[1] + "H" + k[0] + "V" + (k[1] + k[3] * 12), fill: "none" }));
     });
     st.append(sv("text", { class: "tick", x: cx0 + cw - 2, y: cy0 - 6, "text-anchor": "end", text: "FLIGHT CAGE" }));
-    st.append(sv("rect", { class: "bounds", x: sx(b.x0), y: sy(b.y1), width: (b.x1 - b.x0) * SCALE, height: (b.y1 - b.y0) * SCALE, fill: "none" }));
+    st.append(sv("rect", { class: "bounds", x: sx(ar.x0), y: sy(ar.y1), width: (ar.x1 - ar.x0) * SCALE, height: (ar.y1 - ar.y0) * SCALE, fill: "none" }));
+    st.append(sv("text", { class: "tick", x: sx(ar.x0) + 2, y: sy(ar.y1) - 6, text: "ARENA" }));
     for (var x = Math.ceil(b.x0); x <= b.x1; x++) st.append(sv("text", { class: "tick", x: sx(x), y: sy(b.y0) + 17, "text-anchor": "middle", text: x + " m" }));
     for (var y = Math.ceil(b.y0); y <= b.y1; y++) st.append(sv("text", { class: "tick", x: PADL - 8, y: sy(y) + 3.5, "text-anchor": "end", text: y + "" }));
     var hm = a.home;
@@ -647,6 +668,8 @@
     st.append(sv("text", { class: "scalelabel", x: barX0 - 8, y: barY + 3.5, "text-anchor": "end", text: "1 m" }));
 
     var dyn = sv("g", { id: "map-dynamic" });
+    var pad = sv("g", { class: "mk", id: "mk-pad" }, sv("circle", { class: "pad-ring", r: 13 }), sv("path", { class: "pad-h", d: "M-4 -5V5M4 -5V5M-4 0H4" }),
+      sv("text", { class: "tag-text dim", x: 0, y: 28, "text-anchor": "middle", text: "launch pad" }));
     S.markers = {
       path: sv("polyline", { class: "path" }), waypoints: sv("g"), trail: sv("polyline", { class: "trail" }), finds: sv("g"),
       pick: sv("g", { class: "pick" })
@@ -664,9 +687,12 @@
     S.markers.target = tgt; S.markers.scout = scout; S.markers.scoutLabel = scoutLabel; S.markers.rover = rover; S.markers.rot = rot;
     S.markers.halo = scout.querySelector(".scout-halo");
     var hair = sv("g", { id: "crosshair", style: "display:none" }, sv("line", { class: "xh", id: "xh-v", y1: sy(b.y1), y2: sy(b.y0) }), sv("line", { class: "xh", id: "xh-h", x1: sx(b.x0), x2: sx(b.x1) }));
-    dyn.append(S.markers.path, S.markers.waypoints, S.markers.trail, tgt, S.markers.finds, scout, rover, S.markers.pick, hair);
-    [tgt, scout, rover].forEach(function (m) { m.style.display = "none"; });
+    S.markers.pad = pad;
+    dyn.append(pad, S.markers.path, S.markers.waypoints, S.markers.trail, tgt, S.markers.finds, scout, rover, S.markers.pick, hair);
+    [pad, tgt, scout, rover].forEach(function (m) { m.style.display = "none"; });
     svg.append(st, dyn);
+    if (S.mapWired) return;                                        // a rebuild (view grew) keeps the listeners
+    S.mapWired = true;
 
     var frame = 0;
     svg.addEventListener("mousemove", function (ev) {
@@ -674,7 +700,7 @@
       frame = requestAnimationFrame(function () {
         frame = 0;
         var p = clientToSvg(ev);
-        var inside = p.x >= sx(b.x0) && p.x <= sx(b.x1) && p.y >= sy(b.y1) && p.y <= sy(b.y0);
+        var inside = inView(mx(p.x), my(p.y));
         $("crosshair").style.display = inside ? "" : "none";
         if (inside) {
           $("xh-v").setAttribute("x1", p.x); $("xh-v").setAttribute("x2", p.x); $("xh-h").setAttribute("y1", p.y); $("xh-h").setAttribute("y2", p.y);
@@ -685,7 +711,7 @@
     svg.addEventListener("mouseleave", function () { $("crosshair").style.display = "none"; setText($("readout"), S.pick ? pickText() : "x – · y –"); });
     svg.addEventListener("click", function (ev) {
       var p = clientToSvg(ev), x = mx(p.x), y = my(p.y);
-      if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return;
+      if (!inView(x, y)) return;
       S.pick = { x: x, y: y };
       ["d-x", "r-x"].forEach(function (id) { $(id).value = x.toFixed(2); });
       ["d-y", "r-y"].forEach(function (id) { $(id).value = y.toFixed(2); });
@@ -711,6 +737,15 @@
     if (!S.arena || !S.s || !S.markers.rover) return;
     var s = S.s, M = S.markers;
     var r = s.robots.rover, d = s.robots.drone, t = s.robots.target;
+    var outside = [r && r.pose, d && d.pose, t && t.pose, padPoint()].filter(function (p) {
+      return p && typeof p.x === "number" && !inView(p.x, p.y);
+    });
+    if (outside.length) {
+      S.viewExtra = (S.viewExtra || []).concat(outside.map(function (p) { return [p.x, p.y]; }));
+      buildMap(); M = S.markers;
+    }
+    var pad = padPoint();
+    if (pad) place("pad", M.pad, pad.x, pad.y); else M.pad.style.display = "none";
 
     // the planned search pattern, from the latest drone_search result
     var search = null;
@@ -744,7 +779,9 @@
       var flying = d.state === "flying";
       M.scout.setAttribute("class", "mk scout " + (flying ? "flying" : "landed"));
       M.halo.setAttribute("r", flying ? 14 + 16 * (d.pose.z || 0) : 14);
-      setText(M.scoutLabel, flying ? "scout · z " + n2(d.pose.z) : "scout · landed");
+      var onPad = !flying && pad && Math.hypot(d.pose.x - pad.x, d.pose.y - pad.y) < 0.15;
+      setText(M.scoutLabel, flying ? "scout · z " + n2(d.pose.z) : onPad || d.state === "docked" ? "scout · on pad" : "scout · landed");
+      M.pad.lastChild.style.display = onPad ? "none" : "";          // the scout's label already says "on pad"
     } else M.scout.style.display = "none";
 
     if (r && r.online && r.pose && typeof r.pose.x === "number") {
@@ -825,6 +862,8 @@
     wire("d-mark", function () { return manual("drone", "drone_mark", { x: num("d-x"), y: num("d-y") }); });
     wire("r-goto", function () { return manual("rover", "rover_goto", { x: num("r-x"), y: num("r-y") }); });
     wire("r-home", function () { return api("POST", "/rover/home"); });
+    wire("r-anchor-target", function () { return api("POST", "/rover/anchor", { cf: "target" }); });
+    wire("r-anchor-scout", function () { return api("POST", "/rover/anchor", { cf: "scout" }); });
 
     document.querySelectorAll(".tab").forEach(function (t) {
       t.addEventListener("click", function () {

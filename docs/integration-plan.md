@@ -30,6 +30,17 @@ flowchart LR
   the tests never depend on floor measurements.
 - **Two geofences for the drone, kept equal by a test:** `drone_server.py DEFAULT_CAGE` and
   `arena.floor.json drone_cage`. Re-measure → change both (`tests/test_integration.py` fails until you do).
+- **Rover and drone in the same frame:** the scout knows its Lighthouse pose; the rover only counts wheel turns from
+  an anchor. A wrong anchor (rover not on the `home` cross, or not facing +x) shifts and rotates every rover
+  coordinate, so "go to the drone's x, y" drives somewhere else. Fix: put a Crazyflie (target or landed scout) on the
+  EP's top plate, centred, nose to the rover's front, and click **Manual control → Anchor from target CF / scout**
+  (`POST /rover/anchor {"cf": "target"}`). That sets the rover's x, y **and heading** from Lighthouse
+  (`pose_source: crazyflie+odometry`). Re-anchor whenever it drifts. `rover_goto` also stops if the rover's position
+  leaves the mapped area, instead of chasing a goal it can't reach.
+- **Map and launch pad:** the dashboard shows `view` (the whole net, `arena.floor.json`), and grows if a robot shows up
+  outside it. The scout's launch pad is its first takeoff spot (`/pose` → `home` from `drone_server.py`).
+  `drone_home` ("Back to pad") flies there at cruise height and lands; the scenarios use it instead of `drone_land`,
+  so the scout no longer lands on the wreck. Hover height over a mark is `MARK_Z=0.4` m.
 - **Rover body frame:** x forward, y left, z turn-left, on every rover endpoint. The rover server converts to DJI's
   signs; the floor check passed on the real EP.
 - **The browser only talks to `:8002`.** The rover's live video is relayed (`GET /rover/video`), so the dashboard works

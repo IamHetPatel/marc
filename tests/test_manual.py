@@ -121,7 +121,9 @@ def test_rover_drive_is_clamped_and_cannot_leave_the_arena(ctx):
 
 
 def test_rover_drive_obeys_the_separation_rule(ctx):
-    assert run_action(ctx, "drone_takeoff", {})["ok"]                  # scout hovers low beside the rover
+    hm = ctx.arena.home
+    assert run_action(ctx, "drone_takeoff", {})["ok"]
+    assert run_action(ctx, "drone_goto", {"x": hm.x + 0.3, "y": hm.y, "z": 0.2})["ok"]   # low, beside the rover
     r = run_action(ctx, "rover_drive", {"x": 0.2, "y": 0.0, "z": 0.0})
     assert r["blocked"] == "separation"
 

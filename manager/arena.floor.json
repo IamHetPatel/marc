@@ -1,6 +1,9 @@
 {
   "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. MEASURED: the net corners and the drone cage (drone squad, 2026-10-10, scout walked to the corners: (2.06,-0.71), (1.96,1.18), (-1.35,1.48); the 4th corner lost tracking, about (-1.25,-0.41) by symmetry). The drone cage is drone_server.py's DEFAULT_CAGE. PROVISIONAL until F1: bounds (net minus 0.1 m, widened to contain the drone cage), zones, home, overhead tags and camera position. Move them on the floor with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
   "calibrated": false,
+  "_view_note": "view = what the dashboard map shows: the measured net corners (2.06,-0.71) (1.96,1.18) (-1.35,1.48) plus a margin, so a scout or rover outside the arena stays visible (the map also grows by itself). launch_pad = where the scout sits before takeoff; the drone server reports the real one (its first takeoff spot) once it has flown, so this is only the pre-flight guess. Measure it with the wand and fill it in.",
+  "view": {"x0": -1.6, "y0": -1.0, "x1": 2.3, "y1": 1.75},
+  "launch_pad": null,
   "bounds": {"x0": -1.15, "y0": -0.41, "x1": 1.86, "y1": 1.08},
   "drone_cage": {"x0": -1.05, "y0": -0.41, "x1": 1.66, "y1": 0.88, "z_max": 1.2},
   "home": {"x": -0.8, "y": 0.75, "yaw": 0.0},

@@ -61,9 +61,10 @@ class MockWorld:
         self.arm_pose = "home"
         if cfg.dock_mode:
             self.drone = {"state": "docked", "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0, "battery_v": 4.1}
-        else:                           # launch pad 0.3 m ahead of the rover's start, on the floor
-            self.drone = {"state": "landed", "x": arena.home.x + 0.3, "y": arena.home.y, "z": 0.0, "yaw": 0.0,
-                          "battery_v": 4.1}
+        else:                           # on the launch pad (arena.json), else 0.3 m ahead of the rover's start
+            pad = arena.launch_pad or arena.home.model_copy(update={"x": arena.home.x + 0.3})
+            self.drone = {"state": "landed", "x": pad.x, "y": pad.y, "z": 0.0, "yaw": 0.0, "battery_v": 4.1}
+        self.pad = None                  # like drone_server.py: home = where the scout first took off
         self.takeoff_rover = None        # rover pose when the drone left the plate
         self.abort = threading.Event()   # set by drone.land() to interrupt a running scan
 
@@ -152,7 +153,8 @@ class MockWorld:
                 ox, oy = _rot(self.arena.plate_offset.x, self.arena.plate_offset.y, self.rover[2])
                 d.update(x=self.rover[0] + ox, y=self.rover[1] + oy, z=self.arena.dock_z,
                          yaw=_wrap(self.rover[2] + (self.arena.plate_offset.yaw or 0.0)))
-            return {"ok": True, **{k: round(v, 3) if isinstance(v, float) else v for k, v in d.items()}}
+            return {"ok": True, **{k: round(v, 3) if isinstance(v, float) else v for k, v in d.items()},
+                    "home": dict(self.pad) if self.pad else None}
 
     def target_pose(self) -> dict:
         """Ground truth of the 'crashed drone' (the real target Crazyflie reports this via Lighthouse)."""
@@ -247,6 +249,8 @@ class MockDrone:
                 return {"ok": True, "pose": w.drone_pose()}
             pose = w.drone_pose()
             w.takeoff_rover = list(w.rover) if w.drone["state"] == "docked" else None
+            if w.pad is None and not w.cfg.dock_mode:
+                w.pad = {"x": pose["x"], "y": pose["y"]}
             w.drone.update(state="flying", x=pose["x"], y=pose["y"], z=z)
         w.abort.clear()
         w.advance(2.0)
@@ -297,8 +301,15 @@ class MockDrone:
 
     def dock(self) -> dict:
         w = self.w
-        if not w.cfg.dock_mode:
-            return {"ok": False, "docked": False, "error": "docking disabled"}
+        if not w.cfg.dock_mode:          # no plate: /dock means "back to the launch pad and land" (drone_server.py)
+            if w.pad is None:
+                return {"ok": False, "docked": False, "error": "no home recorded: the drone has not taken off yet"}
+            if w.drone["state"] != "flying":
+                self.takeoff()
+            self.goto(w.pad["x"], w.pad["y"], max(w.drone["z"], 0.3))
+            with w.lock:
+                w.drone.update(state="landed", z=0.0)
+            return {"ok": True, "docked": True, "pose": w.drone_pose()}
         with w.lock:
             if w.drone["state"] == "docked":
                 return {"ok": True, "docked": True}

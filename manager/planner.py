@@ -15,7 +15,7 @@ log = logging.getLogger("manager.planner")
 MAX_STEPS = 30
 ROVER_MOTION = {n for n, s in REGISTRY.items() if s.moves_rover}
 DRONE_LAUNCH = {"drone_scan", "drone_goto", "drone_takeoff", "drone_mark", "drone_search"}
-DRONE_RECOVER = {"drone_dock", "drone_land"}
+DRONE_RECOVER = {"drone_dock", "drone_land", "drone_home"}
 
 HEADER = """\
 You are the mission planner of FleetPilot, a human-supervised team of two robots that recover crashed drones from
@@ -39,7 +39,7 @@ DOCK_RULE = (
 OVERHEAD_RULE = (
     'An overhead camera on the ceiling sees the whole field. If the scout is offline, or the mission asks for the '
     'overhead camera, use camera_locate instead of drone_search and drone_mark (then rover_goto "$finding.f1" and '
-    "continue as usual, without drone_land).")
+    "continue as usual, without drone_home).")
 
 
 def rules_text(dock_mode: bool, overhead: bool = False) -> str:
@@ -51,7 +51,7 @@ def rules_text(dock_mode: bool, overhead: bool = False) -> str:
         *([DOCK_RULE] if dock_mode else []),
         *([OVERHEAD_RULE] if overhead else []),
         'A recovery goes in this order: drone_search the field named in the mission, drone_mark "$finding.f1", '
-        'rover_goto "$finding.f1", drone_land, rover_search for the object, rover_inspect. If the mission only asks '
+        'rover_goto "$finding.f1", drone_home, rover_search for the object, rover_inspect. If the mission only asks '
         "to look, check or find, stop there and report.",
         'Detections get ids f1, f2, ... They do not exist yet when you plan: write "$finding.f1". Use "$zone.<name>" '
         'for named zones (field_a, field_b, base, disposal) and "$home" for the start position.',

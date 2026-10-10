@@ -44,6 +44,10 @@ class ChangeBody(BaseModel):
     text: str
 
 
+class AnchorBody(BaseModel):
+    cf: str = "target"
+
+
 class MentorBody(BaseModel):
     present: bool
 
@@ -148,11 +152,17 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
 
     @app.get("/arena")
     def arena():
-        return ctrl().base_ctx.arena.model_dump(exclude={"mock_objects"})
+        a = ctrl().base_ctx.arena
+        return {**a.model_dump(exclude={"mock_objects"}), "view": a.view_rect().model_dump()}
 
     @app.post("/stop")
     def stop():
         return {"ok": True, "robots": ctrl().stop()}
+
+    @app.post("/rover/anchor")
+    def rover_anchor(body: AnchorBody):
+        """A Crazyflie on the rover's top plate gives the rover its true Lighthouse pose (same frame as the drone)."""
+        return {"ok": True, "pose": guarded(ctrl().rover_anchor, body.cf)}
 
     @app.post("/rover/home")
     def rover_home():

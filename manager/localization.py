@@ -63,6 +63,12 @@ class Localization:
         with self._lock:
             self.fix = None
 
+    def anchor(self, x: float, y: float, yaw: float, source: str = "crazyflie_wand"):
+        """The rover is exactly here (Lighthouse frame), e.g. read from a Crazyflie sitting on its top plate.
+        Wheel odometry carries on from this point, so rover and drone coordinates agree again."""
+        with self._lock:
+            self.fix = Fix(Pose(x=x, y=y, yaw=yaw), self.rover.pose(), self.clock.now(), source)
+
     def rover_pose(self) -> LocalizedPose:
         """Raises RobotError if the rover itself is unreachable."""
         with self._lock:
@@ -97,7 +103,8 @@ class Localization:
         elif f.source == "overhead_camera" and now - f.t <= self.arena.overhead.max_age_s:
             source = "overhead_camera"
         else:
-            source = "start_cross+odometry" if f.source == "start_cross" else "fix+odometry"
+            source = {"start_cross": "start_cross+odometry",
+                      "crazyflie_wand": "crazyflie+odometry"}.get(f.source, "fix+odometry")
         return LocalizedPose(f.lh.x + dx, f.lh.y + dy, _wrap(odom["yaw"] + dyaw), source, now - f.t)
 
     def _overhead_fix(self, odom: dict, now: float):

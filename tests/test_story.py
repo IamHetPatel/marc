@@ -21,7 +21,7 @@ def actions(drafts):
 # ---------------------------------------------------------------- prompt rules
 def test_the_rules_tell_the_recovery_story():
     r = rules_text(False)
-    for must in ("drone_search", "drone_mark", "rover_goto", "drone_land", "rover_inspect", "request_authorization",
+    for must in ("drone_search", "drone_mark", "rover_goto", "drone_home", "rover_inspect", "request_authorization",
                  "$zone.disposal", "$home", "One item per trip", "not a drone", "report"):
         assert must in r, must
     assert "rides on the rover" not in r and "drone_dock" not in r             # docking rules only with DOCK_MODE=1
@@ -55,7 +55,7 @@ def test_the_supervisor_prompt_knows_the_triage_rules():
 # ---------------------------------------------------------------- the canned plan
 def test_the_canned_plan_runs_search_mark_drive_land_search_inspect():
     plan = demo_plan("Find the drone in field B", ARENA)
-    assert actions(plan) == ["drone_search", "drone_mark", "rover_goto", "drone_land", "rover_search", "rover_inspect",
+    assert actions(plan) == ["drone_search", "drone_mark", "rover_goto", "drone_home", "rover_search", "rover_inspect",
                              "report"]
     assert plan[0].target == "$zone.field_b" and plan[1].target == plan[2].target == "$finding.f1"
     assert plan[4].target == GENERIC_TARGET
@@ -80,7 +80,7 @@ def test_the_canned_plan_always_validates(text, dock_mode):
 
 def test_in_dock_mode_the_scout_lands_before_the_rover_drives():
     a = actions(demo_plan(HOSTILE, ARENA, dock_mode=True))
-    assert a[:3] == ["drone_search", "drone_dock", "rover_goto"] and "drone_mark" not in a and "drone_land" not in a
+    assert a[:3] == ["drone_search", "drone_dock", "rover_goto"] and "drone_mark" not in a and "drone_home" not in a
 
 
 def test_zone_and_fetch_detection():

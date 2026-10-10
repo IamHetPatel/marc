@@ -232,6 +232,28 @@ class Controller:
             self.base_ctx.loc.reanchor_home()
             self.store.say("system", "Rover position reset to the start cross.")
 
+    def rover_anchor(self, cf: str) -> dict:
+        """A Crazyflie ('target' or 'scout') sits on the rover's top plate, centred, nose to the rover's front:
+        its Lighthouse pose becomes the rover's pose. This puts rover and drone in the same frame."""
+        if cf not in ("target", "scout"):
+            raise ValueError("cf must be 'target' or 'scout'")
+        with self._lock:
+            if self.store.status in ("running", "replanning"):
+                raise Conflict("stop the mission before moving the rover's position")
+        try:
+            p = self.base_ctx.drone.pose(cf=cf)
+        except RobotError as e:
+            raise Conflict(f"cannot read the {cf} Crazyflie: {e}") from e
+        if not p.get("ok", True) or not isinstance(p.get("x"), (int, float)):
+            raise Conflict(f"the {cf} Crazyflie has no position: {p.get('error', 'no pose')}")
+        if p.get("state") == "flying":
+            raise Conflict(f"the {cf} Crazyflie is flying; put it on the rover's top plate first")
+        yaw = float(p.get("yaw") or 0.0)
+        self.base_ctx.loc.anchor(float(p["x"]), float(p["y"]), yaw)
+        msg = f"Rover position set from the {cf} Crazyflie: ({p['x']:.2f}, {p['y']:.2f}), heading {yaw:.0f}°."
+        self.store.say("system", msg)
+        return {"x": p["x"], "y": p["y"], "yaw": yaw}
+
     def set_mentor(self, present: bool):
         self.store.mentor_present = bool(present)
         self.store.event("mentor", present=bool(present))
@@ -391,7 +413,7 @@ class Monitor(threading.Thread):
             else:
                 store.merge_robot("drone", online=True, pose_ok=True, pose_error=None,
                                   pose={k: d.get(k) for k in ("x", "y", "z")},
-                                  state=d.get("state"), battery_v=d.get("battery_v"))
+                                  state=d.get("state"), battery_v=d.get("battery_v"), home=d.get("home"))
             self.fails["drone"] = 0
         except RobotError:
             self._fail("drone")

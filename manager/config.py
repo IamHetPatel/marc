@@ -51,7 +51,7 @@ class Config:
     # --- farmland story (docs/mothership-plan.md §1.4, §1.5): no docking, a simulated downward-camera detector
     dock_mode: bool = False              # DOCK_MODE=1 brings back "drone rides the rover plate" (ai-manager-plan §7)
     search_z: float = 0.6                # scout height while searching (m)
-    mark_z: float = 1.0                  # scout height while hovering over a marked spot (m)
+    mark_z: float = 0.4                  # scout height while hovering over a marked spot (m); the EP is ~0.3 m tall
     detector_fov_deg: float = 60.0
     detector_noise_m: float = 0.05
     detector_miss_p: float = 0.05

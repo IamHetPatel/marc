@@ -7,7 +7,7 @@ targets:
 plan:
   - {robot: drone, action: drone_mark, target: "3.0,2.0", why: "Scout marks the spot it flagged"}
   - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to the marked spot (stops 0.6 m short)"}
-  - {robot: drone, action: drone_land, why: "Scout lands so the rover can work"}
+  - {robot: drone, action: drone_home, why: "Scout flies back to its launch pad and lands, out of the rover's way"}
   - {robot: rover, action: rover_search, target: "object on the floor", why: "Rover turns until its camera sees it"}
   - {robot: rover, action: rover_inspect, question: "What is in front of the robot? Is it a drone, and is it ours or hostile?", why: "Camera triages the object"}
   - {robot: manager, action: request_authorization, finding_id: f1, why: "A human must approve before the rover touches anything hazardous"}

@@ -13,8 +13,8 @@ This README is for everyone (humans and coding agents) working on the repo. It e
 ```mermaid
 flowchart TB
     H([Human: mission text/voice, Approve / Change / Stop])
-    D[Dashboard 🟡<br/>reads /state every 0.5 s]
-    M[AI manager 🟡 :8002<br/>/mission /approve /stop /state]
+    D[Dashboard ✅ /ui/<br/>reads /state every 0.5 s]
+    M[AI manager ✅ :8002<br/>/mission /approve /stop /state + dashboard]
     L{{LLM/VLM<br/>Gemini Robotics-ER 2<br/>tool calling}}
     A1[Rover adapter<br/>HTTP :8000]
     A2[Drone adapter<br/>HTTP :8001 🟡 / cflib in-process ✅]
@@ -172,20 +172,23 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements-manager.txt
-.venv/bin/python -m pytest                                   # 113 tests on mock robots, ~9 s
+.venv/bin/python -m pytest                                   # ~300 tests on mock robots, ~13 s
 
-# one mission in the terminal, fake robots, no API key (canned plan + rule supervisor)
-MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli "Find the object near the exit and bring it back" --auto-approve --mentor
+# the mothership: server + dashboard on :8002, fake robots, no API key needed
+ROVER=mock DRONE=mock MOCK_TIME_SCALE=10 .venv/bin/python -m manager.server
+open http://localhost:8002/                                  # the dashboard (map, plan, camera, manual control)
 
-# the dashboard's server on :8002 (add GEMINI_API_KEY for real planning)
-ROVER=mock DRONE=mock .venv/bin/python -m manager.server
-curl localhost:8002/state
+# a whole mission in the terminal instead
+MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli --scenario t3_recover_hostile --auto-approve --mentor
+MOCK_TIME_SCALE=20 .venv/bin/python -m manager.cli "A hostile drone crashed in field A. Find it and move it to the disposal zone." --mentor
 
-# real robots, one env var each (mixed mode works)
+# real robots, one env var each (mixed mode works); add GEMINI_API_KEY for AI planning
 ROVER=http://<win-ip>:8000 DRONE=http://<drone-ip>:8001 GEMINI_API_KEY=... .venv/bin/python -m manager.server
 ```
 
-Extra env vars: `MOCK_TIME_SCALE` (simulated clock speed-up), `MOCK_FAIL=goto:0.2,grip:0.3` (failure injection), `CHANGE_NEEDS_APPROVAL=1`, `PERCEPTION=mock|gemini`, `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` / `ROVER_ARM_MODE` (see the plan doc §10).
+Three ways to get a plan, all through the same validation and safety (the AI is optional): type a mission (`POST /mission`, Gemini or the built-in plan), load a **scenario** from [scenarios/](scenarios/) (`POST /scenarios/{name}/load`, no AI), or run one action by hand (`POST /manual`, between missions). The gripper will not close on a hazardous finding until the operator answers *yes* to the authorization question; that gate is in code and applies to every plan source.
+
+Env vars: `ROVER` / `DRONE` (`mock` or a URL), `DOCK_MODE=1` (old "drone rides the rover" mode), `SCENARIO=<name>` (load at start), `MOCK_TIME_SCALE` (simulated clock speed-up), `MOCK_FAIL=goto:0.2,grip:0.3` (failure injection), `CHANGE_NEEDS_APPROVAL=1`, `PERCEPTION=mock|gemini`, `SEARCH_Z` / `MARK_Z` / `SEPARATION_M` / `DETECTOR_*`, `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` / `ROVER_ARM_MODE`. Opt-in test layers: `pytest -m live` (real Gemini) and `pytest -m ui` (the dashboard in headless Chromium; `requirements-ui-tests.txt`).
 
 ---
 

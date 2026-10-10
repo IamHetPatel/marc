@@ -17,7 +17,7 @@
 | **P3** Stop / change / replan, `rover_http` on the real EP, grip line, `rover_approach` on the real camera | 🟡 Stop / change / replan ✅ on mocks. `rover_http` ✅ against a fake server. **Nothing touched a real robot yet** |
 | **P4 / P5** real robots, dock mode, 10-run metrics | ⬜ not started |
 
-Run it: see [README → AI manager quick start](../README.md#ai-manager-quick-start). 113 tests run on mocks in ~9 s (`pytest`), plus 2 opt-in live Gemini tests (`pytest -m live`); `arena.json` values are **placeholders** until measured on the floor.
+Run it: see [README → AI manager quick start](../README.md#ai-manager-quick-start). ~300 tests run on mocks in ~13 s (`pytest`), plus opt-in live Gemini (`pytest -m live`) and real-browser (`pytest -m ui`) tests; `arena.json` values are **placeholders** until measured on the floor.
 
 ---
 

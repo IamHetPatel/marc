@@ -8,6 +8,40 @@
 
 ---
 
+## Status (AI squad work packages, built on mocks)
+
+| WP | State | Where |
+| --- | --- | --- |
+| **M1** farmland config, `DOCK_MODE`, mock world | ✅ | `config.py`, `arena.json`, `adapters/mock.py` |
+| **M2** `drone_takeoff`, `drone_mark`, separation rule, target pose | ✅ | `tools.py`, `controller.Monitor` |
+| **M3** dashboard at `/ui/` | ✅ (verified in headless Chromium) | `manager/static/` |
+| **M4** `POST /manual`, `GET /arena` | ✅ | `controller.manual`, `server.py` |
+| **M5** `POST /plan`, scenarios | ✅ | `scenarios.py`, `scenarios/*.yaml` |
+| **M6** triage, authorization gate, disposal, report | ✅ | `tools.py` (`_authorization_gate`), `GET /report` |
+| **M7** simulated detector, `drone_search` | ✅ | `detector.py` |
+| **M8** planner/supervisor on the farmland story | ✅ unit-tested with scripted LLMs; **not run against live Gemini** | `planner.py`, `supervisor.py`, `fallback_plans.py` |
+| R1, D1, F1 | not ours / not started | |
+
+~300 tests on mocks (`pytest`), plus opt-in `pytest -m ui` (real browser) and `pytest -m live` (real Gemini). Nothing here has touched a real robot or the real Gemini API.
+
+**Where the build differs from this spec (and why):**
+
+- **Order:** M7 was built before M5 so scenario loading registers its targets with a real detector, and M3 last so it could cover every endpoint. Each WP is its own commit.
+- **Search pattern (M7):** lanes are `√2·r` apart and inset `r/√2` from the edges, not `1.6·r`. A property test over the whole area found that 1.6·r (with the edge inset) leaves a few-millimetre blind strip along the boundary; `√2·r` is the widest spacing that closes it.
+- **`ask_human` is a checkpoint:** the supervisor sees the operator's answer (an empty search asks "Search field B?" and acts on the reply). It was described that way but not wired until M8.
+- **`rover_inspect`** does not invent a finding for an empty floor (the spec's "create one 0.6 m ahead" applies only when something is visible).
+- **Scenario id = file name.** The `name:` key inside the file is ignored, so `POST /scenarios/{name}/load` is unambiguous; ids must be plain slugs (no path tricks).
+- **`report.yaml` is written atomically**, and an older report with the same mission id (a previous server run) is kept as `report.<timestamp>.yaml`.
+- **`validate_drafts(..., dock_mode=...)`** landed with M1, not M2, because flipping the default to no-docking would otherwise leave the validator rejecting plans the prompt no longer warns about.
+- **Fallback plan (M8):** a recovery mission always delivers to `$zone.disposal`; the rule supervisor redirects our own drone to `$home` after the inspection and drops the authorization question.
+- **A Stop spends the epoch** (`cancel` stays set), so `manual()` renews it; `approve` is refused while a manual action is still moving robots.
+
+**Flag for the floor (F1):** in `t2_mark_and_drive`, `t3_recover_hostile` and `t4_search_field_a` the scout hovers over the marked spot and then `drone_land` lands it **in place, i.e. at the wreck**. The dashboard map shows it landing exactly on the finding. On the real cage that is the scout touching down on or beside the target Crazyflie. Probably wanted: a `drone_goto` back to the launch pad before `drone_land`. Left as the spec wrote it; it is one extra line in each YAML.
+
+**Also open:** `:8002` has no authentication (anyone on the venue Wi-Fi can approve or stop); `arena.json` numbers are placeholders until F1; the Gemini prompts (triage cues, planner rules) are untested against the real model.
+
+---
+
 ## 0. The demo in one paragraph
 
 An enemy drone has crashed in farmland and may carry explosives. A **scout Crazyflie** searches the field and finds it, then hovers over it to **mark the spot**. The **RoboMaster EP** drives there, its camera checks what it is, and, **after a human authorizes it**, the EP grips the drone and carries it to a disposal zone. Everything is controlled from one place: the **mothership** (our server on port 8002 plus its dashboard). The cage floor is the "farmland". Lighthouse plays the role GPS would play outdoors.

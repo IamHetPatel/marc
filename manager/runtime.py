@@ -1,5 +1,6 @@
 """Wiring: config -> adapters -> Ctx. ROVER and DRONE are chosen independently, so mixed mode works
 (real rover + mock drone = Level 3)."""
+import logging
 import random
 from typing import Optional
 
@@ -59,7 +60,7 @@ def build_overhead(cfg: Config, arena, llm, world=None):
     instead (needs a mock robot). OpenCV is imported only here."""
     if not cfg.overhead_cam:
         return None
-    from .overhead import OverheadCamera, open_source
+    from .overhead import OverheadCamera, OverheadError, open_source
     if cfg.overhead_cam == "mock":
         if world is None:
             raise LLMError("OVERHEAD_CAM=mock needs ROVER=mock or DRONE=mock")
@@ -67,7 +68,11 @@ def build_overhead(cfg: Config, arena, llm, world=None):
         view = SyntheticView(arena)
         source, llm = MockOverheadSource(world, view, arena), MockPointer(world, view)
     else:
-        source = open_source(cfg.overhead_cam, cfg.overhead_width, cfg.overhead_height)
+        try:
+            source = open_source(cfg.overhead_cam, cfg.overhead_width, cfg.overhead_height)
+        except OverheadError as e:                  # a missing camera must not keep the mothership from starting
+            logging.getLogger("manager.runtime").warning("overhead camera off: %s", e)
+            return None
     return OverheadCamera(source, arena.overhead, arena.bounds, llm=llm).start()
 
 
@@ -76,9 +81,10 @@ def build_detector(cfg: Config, drone, overhead):
     mode = cfg.detector
     if mode == "auto":
         mode = "overhead" if overhead is not None and overhead.llm is not None else "sim"
+    if mode == "overhead" and overhead is None:
+        logging.getLogger("manager.runtime").warning("DETECTOR=overhead but no overhead camera: using the simulated one")
+        mode = "sim"
     if mode == "overhead":
-        if overhead is None:
-            raise LLMError("DETECTOR=overhead needs OVERHEAD_CAM")
         from .overhead import OverheadDetector
         return OverheadDetector(overhead, cfg.overhead_target, cfg.detector_fov_deg)
     return SimDetector(drone, cfg.detector_fov_deg, cfg.detector_noise_m, cfg.detector_miss_p,

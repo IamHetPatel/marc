@@ -6,6 +6,23 @@ This README is for everyone (humans and coding agents) working on the repo. It e
 
 > **Status legend** used below: ✅ in this repo · 🟡 planned, specified in the Team Plan, not in this repo yet · ⚠️ known gap or sharp edge.
 
+## Getting started
+
+```bash
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt   # once (Python 3.10+)
+
+.venv/bin/python start.py demo     # no hardware: everything simulated, all scenarios work
+.venv/bin/python start.py sim      # no hardware, but through the real rover + drone servers on the floor map
+.venv/bin/python start.py floor    # the real robots: EP in router mode on the hotspot, Crazyradio plugged in
+```
+
+The dashboard opens at http://localhost:8002/. Mix and match: `start.py floor --drone mock` (real rover, simulated
+drone), `--rover <ep-ip>` (skip the search), `--drone http://<laptop>:8001` (drone server on another laptop),
+`--camera 0` (railing camera). A piece that cannot start (missing package, no robot) is reported in one line and the
+rest keeps running; the dashboard shows that robot offline with the reason. Ctrl-C stops the rover and lands the
+scout before shutting down. Place the rover on the start cross and click **Manual control → Rover is on the start
+cross** to anchor its position. Plan and status of the integration: [docs/integration-plan.md](docs/integration-plan.md).
+
 ---
 
 ## 1. Architecture

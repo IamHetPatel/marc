@@ -416,12 +416,14 @@
   var LIGHTHOUSE = { "estimating position": "Lighthouse OK", "receiving, no position": "Lighthouse: no position yet",
                      "not receiving": "Lighthouse: no base station seen" };
   function renderHealth(r, d, chip) {
-    var rh = r.health || {}, dh = d.health || {}, rt = [], el = $("scout-health");
-    if (r.online) {
+    var rh = r.health || {}, dh = d.health || {}, rt = [], el = $("scout-health"), rel = $("rover-health");
+    if (rh.error) rt.push(rh.error);                 // the rover server is up but the EP is off or out of range
+    else if (r.online) {
       if (typeof rh.battery_pct === "number") rt.push("battery " + rh.battery_pct + "%");
       if (rh.camera) rt.push(rh.camera === "live" ? "camera live" : rh.camera);
     }
-    setText($("rover-health"), rt.join(" · "));
+    setText(rel, rt.join(" · "));
+    rel.className = rh.error ? "bad" : "muted";
     if (d.online && d.pose_ok === false) {
       chip.hidden = false; chip.className = "chip warn"; setText(chip, "no fix");
       setText(el, d.pose_error || "position not trusted"); el.className = "bad";
@@ -822,6 +824,7 @@
     wire("d-goto", function () { return manual("drone", "drone_goto", { x: num("d-x"), y: num("d-y"), z: num("d-z") }); });
     wire("d-mark", function () { return manual("drone", "drone_mark", { x: num("d-x"), y: num("d-y") }); });
     wire("r-goto", function () { return manual("rover", "rover_goto", { x: num("r-x"), y: num("r-y") }); });
+    wire("r-home", function () { return api("POST", "/rover/home"); });
 
     document.querySelectorAll(".tab").forEach(function (t) {
       t.addEventListener("click", function () {

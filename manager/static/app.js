@@ -23,7 +23,7 @@
     s: null, arena: null, scenarios: [], trail: [], trailMission: null, pick: null,
     busy: new Set(), lost: 0, cache: {}, bannerTimer: null, booted: false,
     steps: new Map(), prevSteps: new Map(), finds: new Map(), logShown: 0, logMission: null,
-    lastCurrent: null, userScrollAt: 0, roverAngle: null, markers: {}, seenFirst: {}, tab: "log",
+    lastCurrent: null, userScrollAt: 0, roverAngle: null, markers: {}, seenFirst: {}, section: "mission",
     badgeSeen: { log: null, findings: null }
   };
 
@@ -87,9 +87,52 @@
     ask_human: "Ask the operator", report: "Report back", camera_locate: "Find it from above"
   };
   var SOURCE = { ai: "AI plan", fallback: "built-in plan (no AI)", scenario: "scenario", manual: "submitted plan" };
+
+  /* The use cases on the start screen. Scenario files not listed here still show, with their own title. */
+  var USECASE = {
+    t3_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Find it, check it with the camera, and carry it to the disposal zone after a person says yes." },
+    own_drone_home: { title: "Our own drone went down", icon: "scout", text: "Find our crashed scout and bring it back to the base. No authorization needed: it is ours." },
+    decoy_bottle: { title: "False alarm", icon: "alert", text: "The scout flags something; the rover's camera sees it is just a bottle and leaves it." },
+    t4_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches a whole field on its own; the rover goes to whatever it finds." },
+    t2_mark_and_drive: { title: "Mark and drive", icon: "rover", text: "The scout marks a crash site, the rover drives there and takes a look." },
+    overhead_fetch: { title: "Overhead camera finds it", icon: "camera", text: "A ceiling camera spots the wreck instead of the scout; the rover fetches it." }
+  };
+  var USECASE_ORDER = ["t3_recover_hostile", "own_drone_home", "decoy_bottle", "t4_search_field_a", "t2_mark_and_drive", "overhead_fetch"];
+
+  /* What a person sees instead of 16 technical steps: the phases of a recovery. */
+  var PHASES = [
+    { k: "search", label: "Search", text: "The scout sweeps the field from above" },
+    { k: "mark", label: "Mark", text: "The scout hovers over what it found" },
+    { k: "reach", label: "Reach", text: "The rover drives to the spot" },
+    { k: "inspect", label: "Inspect", text: "The rover's camera checks what it is" },
+    { k: "authorize", label: "Authorize", text: "A person approves before anything hazardous is touched" },
+    { k: "pickup", label: "Pick up", text: "The rover lines up with its camera and grips it" },
+    { k: "deliver", label: "Deliver", text: "To the disposal zone, or home if it is ours" },
+    { k: "report", label: "Report", text: "Findings and photos for the record" }
+  ];
+  var PHASE_OF = {
+    drone_search: "search", drone_scan: "search", camera_locate: "search", drone_takeoff: "search", drone_goto: "search",
+    drone_mark: "mark", drone_home: "reach", drone_land: "reach", drone_dock: "reach", rover_search: "reach",
+    rover_drive: "reach", rover_snapshot: "reach", rover_inspect: "inspect", request_authorization: "authorize",
+    ask_human: "authorize", rover_approach: "pickup", rover_check_grip: "pickup", report: "report"
+  };
+  function phaseKeys(steps) {
+    var delivering = false;
+    return steps.map(function (st) {
+      var t = String((st.args || {}).target || "");
+      if (st.action === "rover_goto") {
+        if (t === "$home" || t === "$zone.disposal") { delivering = true; return "deliver"; }
+        return delivering ? "deliver" : "reach";
+      }
+      if (st.action === "rover_grip" || st.action === "rover_arm") return delivering ? "deliver" : "pickup";
+      return PHASE_OF[st.action] || "reach";
+    });
+  }
   var POSE_SOURCE = {
     "docked_drone": "Position from the docked scout", "start_cross+odometry": "Dead reckoning from the start cross",
-    "fix+odometry": "Last fix plus wheel odometry", "overhead_camera": "Seen by the overhead camera"
+    "fix+odometry": "Last fix plus wheel odometry", "overhead_camera": "Seen by the overhead camera",
+    "crazyflie+odometry": "Anchored from a Crazyflie, then wheel odometry", "lighthouse_rider": "Lighthouse, from the Crazyflie it carries",
+    "rider+odometry": "Last Lighthouse fix plus wheel odometry"
   };
   function placeName(t) {
     if (t == null) return "";
@@ -236,8 +279,8 @@
   function render() {
     if (!S.s) return;
     try {
-      renderBar(); renderAttention(); renderComposer(); renderPlan(); renderFleet(); renderTicker();
-      renderLive(); renderCamera(); renderOverhead(); renderFindings(); renderSideFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
+      renderBar(); renderAttention(); renderComposer(); renderPlan(); renderNow(); renderPhases(); renderFleet(); renderTicker();
+      renderLive(); renderCamera(); renderOverhead(); renderFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
     } catch (e) {
       banner("Dashboard error: " + e.message + " (STOP still works)", "", true);
       if (window.console) console.error(e);
@@ -257,8 +300,11 @@
       $("light-" + p[1]).className = "light " + (r && r.online ? "on" : "off");
     });
     var mt = s.metrics || {};
-    setText($("rtt-rover"), mt.rover_rtt_ms != null ? mt.rover_rtt_ms + " ms" : "");
-    setText($("rtt-drone"), mt.drone_rtt_ms != null ? mt.drone_rtt_ms + " ms" : "");
+    $("light-rover").title = mt.rover_rtt_ms != null ? "Rover link: " + mt.rover_rtt_ms + " ms" : "Rover";
+    $("light-drone").title = mt.drone_rtt_ms != null ? "Scout link: " + mt.drone_rtt_ms + " ms" : "Scout";
+    var r = s.robots.rover || {}, d = s.robots.drone || {};
+    var fleetWarn = !r.online || !d.online || d.pose_ok === false || !!(r.health && r.health.error);
+    $("nav-fleet").classList.toggle("warn", fleetWarn);
     var mentor = $("mentor");
     if (document.activeElement !== mentor && !S.busy.has(mentor)) mentor.checked = !!s.mentor_present;
     var cal = $("calibration");
@@ -293,6 +339,9 @@
         (f.length ? f.join("; ") + "." : (m.reason || "Nothing needed doing.")));
       $("report-link").hidden = false;
     }
+    $("report-link-ev").hidden = !m.id;
+    var needsYou = !!q || awaiting;                      // something waits for a person: never let it go unnoticed
+    $("nav-mission").classList.toggle("alert", needsYou && S.section !== "mission");
   }
 
   function renderComposer() {
@@ -301,7 +350,6 @@
     setEnabled($("mission-go"), idle); setEnabled($("mission-text"), idle);
     setEnabled($("change-go"), live); setEnabled($("change-text"), live);
     $("mission-form").hidden = live; $("change-form").hidden = !live;          // one form at a time keeps the plan in view
-    setText($("composer-title"), live ? "Steer the mission" : "New mission");
     setEnabled($("reset"), !!S.s.mission.id && st !== "running" && st !== "replanning");
     document.querySelectorAll("[data-reset]").forEach(function (b) { setEnabled(b, st !== "running" && st !== "replanning"); });
   }
@@ -323,6 +371,7 @@
     if (li.className !== cls) li.className = cls;
     setText(li._title, stepTitle(st));
     setText(li._act, st.action);
+    li.title = st.action;
     setText(li._why, st.why || "");
     var want = st.status === "done" ? "check" : st.status === "failed" ? "x" : st.status === "skipped" ? "minus" : "";
     if (li._icon !== want) { clear(li._node); li._icon = want; if (want) li._node.append(icon(want)); }
@@ -352,11 +401,11 @@
     var s = S.s, m = s.mission, steps = s.plan, doneN = steps.filter(function (x) { return x.status === "done" || x.status === "skipped" || x.status === "failed"; }).length;
     syncSteps($("plan"), steps, s.current_step, S.steps, m.id || "-");
     setText($("plan-count"), doneN + " / " + steps.length);
+    var nav = $("plan-nav-count");
+    nav.hidden = !steps.length; setText(nav, doneN + "/" + steps.length);
     var bar = $("plan-bar"), pct = steps.length ? Math.round(100 * doneN / steps.length) : 0;
     bar.style.width = pct + "%";
     bar.style.background = m.status === "failed" || m.status === "stopped" ? "var(--crit)" : "var(--good)";
-    var ver = $("plan-version");
-    ver.hidden = !steps.length; setText(ver, "v" + m.plan_version);
     var empty = $("plan-empty");
     empty.hidden = steps.length > 0 || m.status === "planning";
     renderSkeleton(steps.length === 0 && m.status === "planning");
@@ -382,6 +431,52 @@
       for (var i = 0; i < 5; i++) sk.append(h("div", { class: "sk-row" }, h("i"), h("span", { style: "width:" + (45 + (i * 13) % 40) + "%" })));
       $("plan-scroll").prepend(sk);
     } else if (!on && sk) sk.remove();
+  }
+
+  /* ---- the "now" card: what is happening, in words ---- */
+  function renderNow() {
+    var s = S.s, m = s.mission, st = m.status, has = !!m.id;
+    $("start-panel").hidden = has;
+    $("now-card").hidden = !has;
+    if (!has) return;
+    var steps = s.plan, cur = null, idx = -1;
+    steps.forEach(function (x, i) { if (x.id === s.current_step && (x.status === "running" || st === "running" || st === "replanning")) { cur = x; idx = i; } });
+    var keys = phaseKeys(steps), ph = cur ? PHASES.filter(function (p) { return p.k === keys[idx]; })[0] : null;
+    var title, why = "";
+    if (st === "planning") { title = "Planning the mission"; why = "Turning the mission into steps the robots are allowed to do."; }
+    else if (st === "awaiting_approval") { title = "Waiting for your approval"; why = steps.length + " steps are ready. Nothing moves until you approve."; }
+    else if (m.pending_question) { title = "Waiting for your decision"; why = m.pending_question; }
+    else if (cur) { title = stepTitle(cur); why = cur.why || ""; }
+    else if (st === "done") { title = "Mission complete"; why = m.reason || ""; }
+    else if (st === "failed") { title = "Mission failed"; why = m.error || ""; }
+    else if (st === "stopped") { title = "Stopped"; why = "The rover was halted and the scout told to land."; }
+    else { title = st.replace("_", " "); }
+    setText($("now-phase"), ph ? "Step " + (idx + 1) + " of " + steps.length + " · " + ph.label : "");
+    setText($("now-title"), title);
+    setText($("now-why"), why);
+  }
+
+  /* ---- the phase strip: the recovery story at a glance ---- */
+  function renderPhases() {
+    var s = S.s, steps = s.plan, keys = phaseKeys(steps), cur = s.current_step, st = s.mission.status;
+    var present = PHASES.filter(function (p) { return !steps.length || keys.indexOf(p.k) >= 0; });
+    var states = present.map(function (p) {
+      if (!steps.length) return "idle";
+      var mine = steps.filter(function (x, i) { return keys[i] === p.k; });
+      if (mine.some(function (x) { return x.id === cur && (x.status === "running" || st === "running" || st === "replanning"); })) return "active";
+      if (mine.every(function (x) { return x.status === "skipped"; })) return "skipped";
+      if (mine.every(function (x) { return x.status === "done" || x.status === "skipped"; })) return "done";
+      if (mine.some(function (x) { return x.status === "failed"; }) && !mine.some(function (x) { return x.status === "pending"; })) return "failed";
+      return "pending";
+    });
+    if (!changed("phases", [present.map(function (p) { return p.k; }), states])) return;
+    var ol = $("phases");
+    clear(ol);
+    present.forEach(function (p, i) {
+      var state = states[i], mark = state === "done" ? icon("check") : state === "failed" ? icon("x") : state === "skipped" ? icon("minus") : h("span", { text: String(i + 1) });
+      ol.append(h("li", { class: "phase " + state, title: p.text, "aria-current": state === "active" ? "step" : null },
+        h("span", { class: "pnode" }, mark), h("span", { class: "plabel" }, h("b", { text: p.label }), h("small", { text: p.text }))));
+    });
   }
 
   /* ---- robot status strip ---- */
@@ -449,7 +544,6 @@
 
   function renderCamera() {
     var id = S.s.last_image_id, img = $("camera");
-    setText($("camera-id"), id || "");
     $("camera-empty").hidden = !!id;
     img.hidden = !id;
     if (id && S.cache.cam !== id) { S.cache.cam = id; img.src = "/images/" + encodeURIComponent(id) + ".jpg"; }
@@ -506,12 +600,12 @@
   function findingCells(f) {
     var st = STATUS[f.status] || STATUS.found;
     return [
-      h("td", { class: "m", text: f.id }), h("td", { class: "m", text: n2(f.x) }), h("td", { class: "m", text: n2(f.y) }),
-      h("td", { text: f.category ? f.category.replace(/_/g, " ") : (f.label || "—") }),
-      h("td", null, f.hazardous == null ? "—" : f.hazardous ? badge("bad", "alert", "hazardous") : badge("good", "check", "clear")),
-      h("td", { text: f.authorized ? "yes" : "no" }),
+      h("td", { class: "photo" }, f.image_id ? h("img", { src: "/images/" + encodeURIComponent(f.image_id) + ".jpg", alt: "evidence for " + f.id, "data-zoom": "1" }) : h("span", { class: "noimg" }, icon("camera"))),
+      h("td", null, h("b", { class: "what", text: f.category ? f.category.replace(/_/g, " ") : (f.label || "unidentified") }), h("small", { class: "fid", text: f.id })),
+      h("td", null, f.hazardous == null ? "—" : f.hazardous ? badge("bad", "alert", "hazardous") : badge("good", "check", "safe")),
+      h("td", { text: f.authorized ? "yes" : "—" }),
       h("td", null, badge(st.cls, st.ic, st.label)),
-      h("td", null, f.image_id ? h("img", { src: "/images/" + encodeURIComponent(f.image_id) + ".jpg", alt: "evidence for " + f.id, "data-zoom": "1" }) : "")
+      h("td", { class: "m", text: n2(f.x) + ", " + n2(f.y) })
     ];
   }
   function renderFindings() {
@@ -528,21 +622,6 @@
       seen.add(f.id);
     });
     S.finds.forEach(function (tr, id) { if (!seen.has(id)) { tr.remove(); S.finds.delete(id); } });
-  }
-
-  /* ---- the short list beside the map: the latest findings, with their evidence photos ---- */
-  function renderSideFindings() {
-    var list = S.s.findings.slice(-3).reverse(), ul = $("find-cards");
-    $("find-empty").hidden = list.length > 0;
-    if (!changed("sidefinds", list)) return;
-    clear(ul);
-    list.forEach(function (f) {
-      var st = STATUS[f.status] || STATUS.found;
-      ul.append(h("li", null,
-        f.image_id ? h("img", { src: "/images/" + encodeURIComponent(f.image_id) + ".jpg", alt: "evidence for " + f.id, "data-zoom": "1" }) : h("span", { class: "noimg" }, icon("camera")),
-        h("div", { class: "fi" }, h("b", { text: f.id + " " + (f.category ? f.category.replace(/_/g, " ") : (f.label || "object")) }),
-          h("div", { class: "fb" }, f.hazardous ? badge("bad", "alert", "hazardous") : null, badge(st.cls, st.ic, st.label)))));
-    });
   }
 
   /* ---- log ---- */
@@ -566,7 +645,7 @@
   }
   function bump(tab, n) {                 // a quiet nudge on a tab whose content grew while you were looking elsewhere
     var prev = S.badgeSeen[tab];
-    if (prev != null && n > prev && S.tab !== tab) {
+    if (prev != null && n > prev && S.section !== "evidence") {
       var el = $(tab + "-count");
       el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
     }
@@ -586,20 +665,23 @@
     setText(box, "last: " + m.action + (args ? " " + args : "") + " → " + res);
     box.className = "manual-last " + (m.status === "failed" ? "bad" : m.status === "done" ? "ok" : "");
   }
-  function scenarioItem(sc, delay) {
-    var b = h("button", { type: "button", class: "btn", "data-scenario": sc.name }, icon("play"), "Load");
+  function usecaseCard(sc, delay) {
+    var u = USECASE[sc.name] || { title: sc.title, icon: "play", text: sc.has_plan ? "A ready-made plan." : "The AI plans it from the mission." };
+    var b = h("button", { type: "button", class: "usecase", "data-scenario": sc.name, title: sc.title },
+      h("span", { class: "uc-ic" }, icon(u.icon)),
+      h("span", { class: "uc-t" }, h("b", { text: u.title }), h("small", { text: u.text })),
+      h("span", { class: "uc-go" }, icon("play")));
     b.addEventListener("click", function () {
       act(b, function () { return api("POST", "/scenarios/" + encodeURIComponent(sc.name) + "/load"); });
     });
-    return h("li", { style: "animation-delay:" + delay + "ms" },
-      h("span", { class: "t" }, sc.title, h("small", { text: sc.name + (sc.has_plan ? " · scripted plan" : " · the AI plans it") })), b);
+    return h("li", { style: "animation-delay:" + delay + "ms" }, b);
   }
   function renderScenarios() {
     if (changed("scenarios", S.scenarios)) {
-      [$("scenarios"), $("start-list")].forEach(function (ul) {
-        clear(ul);
-        S.scenarios.forEach(function (sc, i) { ul.append(scenarioItem(sc, i * 35)); });
-      });
+      var ul = $("start-list"), rank = function (sc) { var i = USECASE_ORDER.indexOf(sc.name); return i < 0 ? 99 : i; };
+      clear(ul);
+      S.scenarios.slice().sort(function (a, b) { return rank(a) - rank(b); })
+        .forEach(function (sc, i) { ul.append(usecaseCard(sc, i * 40)); });
     }
     document.querySelectorAll("[data-scenario]").forEach(function (b) { setEnabled(b, isIdle()); });
   }
@@ -675,7 +757,7 @@
       pick: sv("g", { class: "pick" })
     };
     var tgt = sv("g", { class: "mk", id: "mk-target" }, sv("circle", { class: "beacon", r: 12 }), sv("circle", { class: "target-ring", r: 12 }),
-      sv("path", { class: "target-x", d: "M-4 -4L4 4M4 -4L-4 4" }), sv("text", { class: "tag-text dim", x: 17, y: 4, text: "truth" }));
+      sv("path", { class: "target-x", d: "M-4 -4L4 4M4 -4L-4 4" }), sv("text", { class: "tag-text dim", x: 0, y: 28, "text-anchor": "middle", text: "truth" }));
     var rotors = [[-8, -8], [8, -8], [-8, 8], [8, 8]].map(function (p) { return sv("circle", { class: "scout-rotor", cx: p[0], cy: p[1], r: 5.5 }); });
     var scoutLabel = sv("text", { class: "tag-text", x: 0, y: 30, "text-anchor": "middle", text: "scout" });
     var scout = sv("g", { class: "mk scout landed", id: "mk-scout" }, sv("circle", { class: "scout-halo", r: 16 }),
@@ -801,20 +883,17 @@
     }
   }
 
-  /* ------------------------------------------------------------------ drawer, tabs, theme, lightbox */
-  function selectTab(name, open) {
-    S.tab = name;
-    document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", String(t.getAttribute("data-tab") === name)); });
-    document.querySelectorAll(".panel").forEach(function (p) { p.hidden = p.id !== "panel-" + name; });
-    if (open) setDrawer(true);
-    var el = $(name + "-count"); if (el) el.classList.remove("bump");
-    store("fp-tab", name);
-  }
-  function setDrawer(openIt) {
-    var d = $("drawer");
-    d.classList.toggle("closed", !openIt);
-    $("drawer-toggle").setAttribute("aria-expanded", String(openIt));
-    store("fp-drawer", openIt ? "open" : "closed");
+  /* ------------------------------------------------------------------ sections, theme, lightbox */
+  var VIEWS = ["mission", "plan", "fleet", "evidence"];
+  function selectView(name) {
+    if (VIEWS.indexOf(name) < 0) name = "mission";
+    S.section = name;
+    document.querySelectorAll(".vtab").forEach(function (t) { t.setAttribute("aria-selected", String(t.getAttribute("data-view") === name)); });
+    VIEWS.forEach(function (v) { $("view-" + v).hidden = v !== name; });
+    if (name === "evidence") { var el = $("findings-count"); el.classList.remove("bump"); }
+    if (name === "mission") $("nav-mission").classList.remove("alert");
+    if (name === "plan") keepCurrentInView();
+    store("fp-view", name);
   }
   function openLightbox(src) {
     if (!src) return;
@@ -845,7 +924,7 @@
     wire("approve", function () { return api("POST", "/approve", { plan_version: S.s.mission.plan_version }); });
     wire("reset", reset);
     document.querySelectorAll("[data-reset]").forEach(function (b) { b.addEventListener("click", function () { act(b, reset); }); });
-    $("adjust").addEventListener("click", function () { $("change-text").focus(); });
+    $("adjust").addEventListener("click", function () { selectView("mission"); $("change-text").focus(); });
     wire("answer-yes", function () { return api("POST", "/change", { text: "yes" }); });
     wire("answer-no", function () { return api("POST", "/change", { text: "no" }); });
     $("mentor").addEventListener("change", function () {
@@ -865,14 +944,11 @@
     wire("r-anchor-target", function () { return api("POST", "/rover/anchor", { cf: "target" }); });
     wire("r-anchor-scout", function () { return api("POST", "/rover/anchor", { cf: "scout" }); });
 
-    document.querySelectorAll(".tab").forEach(function (t) {
-      t.addEventListener("click", function () {
-        var name = t.getAttribute("data-tab");
-        if (S.tab === name && !$("drawer").classList.contains("closed")) setDrawer(false); else selectTab(name, true);
-      });
+    document.querySelectorAll(".vtab").forEach(function (t) {
+      t.addEventListener("click", function () { selectView(t.getAttribute("data-view")); });
     });
-    $("to-findings").addEventListener("click", function () { selectTab("findings", true); });
-    $("drawer-toggle").addEventListener("click", function () { setDrawer($("drawer").classList.contains("closed")); });
+    $("see-plan").addEventListener("click", function () { selectView("plan"); });
+    $("to-evidence").addEventListener("click", function () { selectView("evidence"); });
     $("theme").addEventListener("click", function () {
       var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", next);
@@ -886,7 +962,7 @@
     document.addEventListener("keydown", function (ev) {
       if (ev.key === "Escape" && !$("lightbox").hidden) $("lightbox").hidden = true;
       var typing = /^(INPUT|TEXTAREA|SELECT)$/.test((ev.target.tagName || ""));
-      if (ev.key === "/" && !typing && !$("mission-text").disabled) { ev.preventDefault(); $("mission-text").focus(); }
+      if (ev.key === "/" && !typing && !$("mission-text").disabled) { ev.preventDefault(); selectView("mission"); $("mission-text").focus(); }
     });
     var box = $("plan-scroll");
     // only real scrolling counts as "the person is looking around": wheel, a touch drag, or grabbing the scrollbar
@@ -896,10 +972,7 @@
     // a question or approval card appearing above the plan shrinks it: keep the working step in view
     if (window.ResizeObserver) new ResizeObserver(function () { keepCurrentInView(); }).observe(box);
 
-    var tab = recall("fp-tab");
-    selectTab(["log", "findings", "manual", "scenarios"].indexOf(tab) >= 0 ? tab : "log", false);
-    var saved = recall("fp-drawer");
-    setDrawer(saved ? saved === "open" : window.innerHeight >= 960);
+    selectView(recall("fp-view") || "mission");
   }
 
   wireUp();

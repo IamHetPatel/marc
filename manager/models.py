@@ -107,6 +107,8 @@ class Arena(BaseModel):
     camera: Camera = Camera()
     overhead: Overhead = Overhead()
     mock_objects: list = Field(default_factory=list)
+    anchor_offset: Pose = Pose(x=-0.35, y=0.0, yaw=0.0)  # where an anchoring Crazyflie sits in the ROVER's frame
+                                                         # (x forward, y left; default: right behind it, same heading)
     launch_pad: Optional[Pose] = None               # where the scout takes off and returns to (may be outside bounds)
     view: Optional[Rect] = None                     # what the dashboard map shows: the whole net and the pad
 
@@ -142,6 +144,7 @@ def load_arena(path: Optional[str] = None) -> Arena:
         overhead=Overhead(**{k: v for k, v in raw.get("overhead", {}).items() if not k.startswith("_")}),
         mock_objects=[MockObject(**o) for o in raw.get("mock_objects", [])],
         launch_pad=Pose(**raw["launch_pad"]) if raw.get("launch_pad") else None,
+        **({"anchor_offset": Pose(**raw["anchor_offset"])} if raw.get("anchor_offset") else {}),
         view=Rect(**raw["view"]) if raw.get("view") else None,
     )
 

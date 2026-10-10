@@ -49,6 +49,8 @@ BROADCAST_PORT = 40926
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("PORT", "8000"))
 MOCK = os.getenv("MOCK") == "1"
+REPLY_TIMEOUT_S = float(os.getenv("ROVER_REPLY_TIMEOUT_S", "1.5"))   # EP replies take ~30-70 ms; 1.5 s = something is wrong
+WELL_KNOWN = ("192.168.2.1", "192.168.42.2")   # the EP's own Wi-Fi (direct/AP mode) and its USB (RNDIS) address
 VIDEO = os.getenv("ROVER_VIDEO", "1") != "0"   # 0: no camera stream (less Wi-Fi load; use it to rule video out)
 SDK_Y_SIGN = float(os.getenv("SDK_Y_SIGN", "-1"))
 SDK_Z_SIGN = float(os.getenv("SDK_Z_SIGN", "-1"))
@@ -111,7 +113,7 @@ class SdkLink:
     LOCK_WAIT_S = 2.0
     SPLIT_WAIT_S = 0.03
 
-    def __init__(self, host: str, port: int = SDK_PORT, timeout: float = 5.0):
+    def __init__(self, host: str, port: int = SDK_PORT, timeout: float = REPLY_TIMEOUT_S):
         self.auto = host == "auto"
         self.address = None if self.auto else host
         self.port, self.timeout = port, timeout
@@ -206,7 +208,9 @@ class SdkLink:
         if self.auto:
             candidates += [ip for ip in find_eps() if ip != self.address]
             if not candidates:
-                raise ConnectionError("no EP found on this network (is it on, in router mode, on this hotspot?)")
+                raise ConnectionError(f"no EP found on this laptop's network ({_lan_ip()}): is the EP on, in router "
+                                      "mode, on the SAME hotspot as this laptop? Or join the EP's own Wi-Fi / plug in "
+                                      "its USB cable (tried 192.168.2.1 and 192.168.42.2 too)")
         last = None
         for address in candidates:
             try:
@@ -330,10 +334,6 @@ def find_eps(listen_s: float = 1.5) -> list:
             return [m.group(1).decode() if m else sender]
     except OSError:
         pass
-    me = _lan_ip()
-    if me == "localhost":
-        return []
-    prefix = me.rsplit(".", 1)[0]
 
     def is_ep(host: str) -> bool:
         for port in (SDK_PORT, EVENT_PORT):
@@ -342,6 +342,13 @@ def find_eps(listen_s: float = 1.5) -> list:
             except OSError:
                 return False
         return True
+    direct = [h for h in WELL_KNOWN if is_ep(h)]   # laptop on the EP's own Wi-Fi, or USB cable
+    if direct:
+        return direct
+    me = _lan_ip()
+    if me == "localhost":
+        return []
+    prefix = me.rsplit(".", 1)[0]
     hosts = [f"{prefix}.{i}" for i in range(1, 255) if f"{prefix}.{i}" != me]
     with ThreadPoolExecutor(max_workers=64) as pool:
         return [h for h, ok in zip(hosts, pool.map(is_ep, hosts)) if ok]

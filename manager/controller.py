@@ -10,6 +10,7 @@ call can never overwrite newer state.
 import dataclasses
 import json
 import logging
+import math
 import threading
 from pathlib import Path
 from typing import Optional
@@ -233,8 +234,9 @@ class Controller:
             self.store.say("system", "Rover position reset to the start cross.")
 
     def rover_anchor(self, cf: str) -> dict:
-        """A Crazyflie ('target' or 'scout') sits on the rover's top plate, centred, nose to the rover's front:
-        its Lighthouse pose becomes the rover's pose. This puts rover and drone in the same frame."""
+        """A landed Crazyflie ('target' or 'scout') sits at arena.anchor_offset from the rover (default: right behind
+        it, facing the same way): its Lighthouse pose, minus that offset, becomes the rover's pose. This puts rover
+        and drone in the same frame."""
         if cf not in ("target", "scout"):
             raise ValueError("cf must be 'target' or 'scout'")
         with self._lock:
@@ -248,11 +250,15 @@ class Controller:
             raise Conflict(f"the {cf} Crazyflie has no position: {p.get('error', 'no pose')}")
         if p.get("state") == "flying":
             raise Conflict(f"the {cf} Crazyflie is flying; put it on the rover's top plate first")
-        yaw = float(p.get("yaw") or 0.0)
-        self.base_ctx.loc.anchor(float(p["x"]), float(p["y"]), yaw)
-        msg = f"Rover position set from the {cf} Crazyflie: ({p['x']:.2f}, {p['y']:.2f}), heading {yaw:.0f}°."
+        off = self.base_ctx.arena.anchor_offset
+        yaw = float(p.get("yaw") or 0.0) - (off.yaw or 0.0)              # the rover's heading
+        c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        x, y = p["x"] - (c * off.x - s * off.y), p["y"] - (s * off.x + c * off.y)
+        self.base_ctx.loc.anchor(x, y, yaw)
+        msg = (f"Rover position set from the {cf} Crazyflie {abs(off.x):.2f} m {'behind' if off.x < 0 else 'ahead of'} "
+               f"it: ({x:.2f}, {y:.2f}), heading {yaw:.0f}°.")
         self.store.say("system", msg)
-        return {"x": p["x"], "y": p["y"], "yaw": yaw}
+        return {"x": round(x, 3), "y": round(y, 3), "yaw": round(yaw, 1)}
 
     def set_mentor(self, present: bool):
         self.store.mentor_present = bool(present)

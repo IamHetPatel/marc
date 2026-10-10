@@ -10,13 +10,21 @@ from manager.tools import run_action
 
 
 # ---------------------------------------------------------------- anchor from a Crazyflie
-def test_anchor_from_the_target_crazyflie_puts_the_rover_in_the_drone_frame(make_ctrl):
+def test_anchor_from_a_crazyflie_right_behind_the_rover_puts_it_in_the_drone_frame(make_ctrl):
     c = make_ctrl()
-    c.world.objects[0].update(x=1.7, y=2.1)                     # the target Crazyflie now sits on the rover's plate
-    pose = c.rover_anchor("target")
+    c.world.objects[0].update(x=1.7, y=2.1)                     # the target Crazyflie sits 0.35 m behind the rover
+    pose = c.rover_anchor("target")                             # (mock target faces +x, like the rover)
     p = c.base_ctx.loc.rover_pose()
-    assert (pose["x"], pose["y"]) == (1.7, 2.1)
-    assert (round(p.x, 2), round(p.y, 2), p.source) == (1.7, 2.1, "crazyflie+odometry")
+    assert (pose["x"], pose["y"]) == (2.05, 2.1)
+    assert (round(p.x, 2), round(p.y, 2), p.source) == (2.05, 2.1, "crazyflie+odometry")
+
+
+def test_the_anchor_offset_turns_with_the_crazyflie(make_ctrl, monkeypatch):
+    c = make_ctrl()
+    monkeypatch.setattr(c.base_ctx.drone, "pose", lambda cf="scout": {"ok": True, "x": 1.0, "y": 1.0, "yaw": 90.0,
+                                                                       "state": "landed"})
+    pose = c.rover_anchor("scout")                              # facing +y, so the rover is 0.35 m further in +y
+    assert (pose["x"], pose["y"], pose["yaw"]) == (1.0, 1.35, 90.0)
 
 
 def test_odometry_carries_on_from_the_anchor(ctx):
@@ -39,7 +47,7 @@ def test_post_rover_anchor(make_ctrl):
     c = make_ctrl()
     with TestClient(create_app(c)) as client:
         r = client.post("/rover/anchor", json={"cf": "target"})
-        assert r.status_code == 200 and r.json()["pose"]["x"] == 2.4
+        assert r.status_code == 200 and r.json()["pose"]["x"] == 2.75     # target at 2.4, rover 0.35 m ahead
 
 
 # ---------------------------------------------------------------- out-of-area guard

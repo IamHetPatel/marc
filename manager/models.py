@@ -51,6 +51,10 @@ class Finding(BaseModel):
     label: Optional[str] = None
     confidence: Optional[float] = None
     image_id: Optional[str] = None
+    category: Optional[str] = None           # own_drone | hostile_drone | not_a_drone | unknown (set by rover_inspect)
+    hazardous: Optional[bool] = None         # None until inspected
+    authorized: bool = False                 # the operator said yes to handling it
+    status: Literal["found", "inspected", "recovered", "skipped"] = "found"
 
 
 # ---------------------------------------------------------------- arena.json
@@ -168,6 +172,8 @@ class MissionInfo(BaseModel):
     reason: str = ""                        # the AI's latest one-line explanation (additive)
     pending_question: Optional[str] = None  # set while an ask_human step waits for /change (additive)
     error: Optional[str] = None             # why the mission failed (additive)
+    started_at: Optional[float] = None      # epoch seconds (additive)
+    finished_at: Optional[float] = None
 
 
 class Message(BaseModel):

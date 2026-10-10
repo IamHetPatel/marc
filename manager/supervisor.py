@@ -72,6 +72,8 @@ class RuleSupervisor:
                 return SupervisorDecision(decision="continue",
                                           reason=f"The drone flagged {n} spot(s); the rover will check the strongest.")
             if step.action == "rover_inspect":
+                if res.get("category") == "not_a_drone":
+                    return SupervisorDecision(decision="done", reason="Not a drone, nothing to recover.")
                 if res.get("grippable") is False and any(_is_pick_chain(s) for s in sit.steps if s.status == "pending"):
                     rest = [step_to_draft(s) for s in sit.steps if s.status == "pending" and not _is_pick_chain(s)]
                     return SupervisorDecision(decision="replan", remaining_steps=rest,
@@ -89,6 +91,9 @@ class RuleSupervisor:
                                           "present. Switch the mentor toggle on, then reply to continue.")
             if res.get("offline"):
                 return SupervisorDecision(decision="abort", reason=f"The {res['offline']} is unreachable: {err}")
+            if step.action == "request_authorization":
+                return SupervisorDecision(decision="done", reason="The operator did not authorize it, so the "
+                                          "rover leaves it where it is.")
             if step.action == "drone_dock":
                 land = StepDraft(robot="drone", action="drone_land", why="Docking failed, so land the drone in place")
                 return SupervisorDecision(decision="replan", remaining_steps=[land, *keep],

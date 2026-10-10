@@ -1,6 +1,5 @@
 """WP-M5: submitted plans and scenario files. Every plan source ends in the same approve-and-run path."""
 import io
-import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,21 +10,15 @@ from manager.models import StepDraft
 from manager.scenarios import UnknownScenario, list_scenarios, load_scenario
 from manager.server import create_app
 
-from .conftest import draft, wait_for, wait_status
+from .conftest import draft, finish, wait_for, wait_status
 
 SCENARIOS = [s["name"] for s in list_scenarios()]
 
 
-def answer_questions(ctrl, answer="yes", timeout=30.0):
+def answer_questions(ctrl, answers=("yes",), timeout=30.0):
     """Approve the current plan and wait for the end, answering any question the mission asks."""
     ctrl.approve(ctrl.store.mission.plan_version)
-    t0 = time.time()
-    while ctrl.store.status not in ("done", "failed", "stopped") and time.time() - t0 < timeout:
-        if ctrl.store.mission.pending_question:
-            ctrl.change(answer)
-            time.sleep(0.05)
-        time.sleep(0.01)
-    return ctrl.store.to_json()
+    return finish(ctrl, answers, timeout)
 
 
 # ---------------------------------------------------------------- submit_plan

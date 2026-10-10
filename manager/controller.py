@@ -8,14 +8,18 @@ after its epoch was cancelled (stop, restarted planning, new mission) discards i
 call can never overwrite newer state.
 """
 import dataclasses
+import json
 import logging
 import threading
+from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from .adapters.base import RobotError
+from .detector import Target
 from .executor import Budget, Executor
 from .llm import call_with_timeout
-from .detector import Target
 from .planner import Planner, drafts_to_steps, validate_drafts
 from .scenarios import load_scenario
 from .supervisor import Supervisor
@@ -179,6 +183,7 @@ class Controller:
         with self._lock:
             self.store.set_status("stopped", pending_question=None)
             self.store.say("system", f"{reason}. Rover halted, drone landing.")
+            self._write_report()
         return result
 
     def reset(self):
@@ -187,6 +192,36 @@ class Controller:
                 raise Conflict("stop the mission before resetting")
             self._new_epoch()
             self.store.reset()
+
+    def build_report(self) -> dict:
+        """The handover report for the current mission: what was asked, what was found and decided, what ran."""
+        st = self.store.to_json()
+        m = st["mission"]
+        return {"mission": {k: m[k] for k in ("id", "text", "status", "source", "plan_version", "fallback",
+                                              "reason", "error")},
+                "started": m["started_at"], "finished": m["finished_at"],
+                "findings": st["findings"],
+                "steps": [{k: s[k] for k in ("id", "robot", "action", "args", "why", "status", "result")}
+                          for s in st["plan"]],
+                "messages": st["messages"], "metrics": st["metrics"]}
+
+    def _write_report(self):
+        """runs/<mission_id>/report.yaml. An older report with the same id (a previous server run) is kept."""
+        if self.store.mission.id is None:
+            return
+        try:
+            report = json.loads(json.dumps(self.build_report(), default=str))
+            folder = Path(self.cfg.runs_dir) / self.store.mission.id
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / "report.yaml"
+            if path.exists():
+                path.rename(folder / f"report.{int(path.stat().st_mtime)}.yaml")
+            tmp = folder / "report.yaml.tmp"                # readers never see a half-written report
+            tmp.write_text(yaml.safe_dump(report, sort_keys=False, allow_unicode=True))
+            tmp.replace(path)
+            self.store.event("report", path=str(path))
+        except (OSError, yaml.YAMLError) as e:
+            log.warning("could not write the mission report: %s", e)
 
     def set_mentor(self, present: bool):
         self.store.mentor_present = bool(present)
@@ -279,12 +314,14 @@ class Controller:
             if outcome == "done":
                 self.store.set_status("done", pending_question=None)
                 self.store.say("ai", "Mission complete.")
+                self._write_report()
             elif outcome == "awaiting_approval":
                 self.store.set_status("awaiting_approval")
                 self.store.say("ai", "The plan was changed. Review the new plan and approve it to continue.")
             else:
                 self.store.set_status("failed", error=executor.error, pending_question=None)
                 self.store.say("ai", f"Mission failed: {executor.error}")
+                self._write_report()
 
     def _take_changes(self) -> list:
         with self._lock:

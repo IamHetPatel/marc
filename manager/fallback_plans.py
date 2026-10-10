@@ -39,6 +39,8 @@ def demo_plan(text: str, arena: Arena, dock_mode: bool = False) -> list:
     ]
     if wants_fetch(text):
         steps += [
+            StepDraft(robot="manager", action="request_authorization", finding_id="f1",
+                      why="A human must approve before the rover touches anything hazardous"),
             StepDraft(robot="rover", action="rover_arm", mode="pick", why="Lower the arm to pick position"),
             StepDraft(robot="rover", action="rover_grip", mode="open", why="Open the gripper"),
             StepDraft(robot="rover", action="rover_approach", target=GENERIC_TARGET,

@@ -1,0 +1,22 @@
+# Second use case: one of OUR drones went down. Same chase, but it is not hazardous and it goes home, not to disposal.
+name: own_drone_home
+title: "Bring our own crashed drone home"
+mission: "One of our own drones went down in field A. Find it and bring it back to the base."
+targets:
+  - {id: t1, kind: own_drone, source: live, x: 2.4, y: 1.1}
+plan:
+  - {robot: drone, action: drone_mark, target: "2.4,1.1", why: "Scout marks where our drone went down"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", why: "Rover drives to the marked spot (stops 0.6 m short)"}
+  - {robot: drone, action: drone_land, why: "Scout lands so the rover can work"}
+  - {robot: rover, action: rover_search, target: "drone", why: "Rover turns until its camera sees it"}
+  - {robot: rover, action: rover_inspect, question: "What is in front of the robot? Is it a drone, and is it ours or hostile?", why: "Camera checks it is really ours"}
+  - {robot: rover, action: rover_arm, mode: pick, why: "Lower the arm"}
+  - {robot: rover, action: rover_grip, mode: open, why: "Open the gripper"}
+  - {robot: rover, action: rover_approach, target: "drone", why: "Creep forward on the camera until it is in the gripper"}
+  - {robot: rover, action: rover_grip, mode: close, why: "Close the gripper on it"}
+  - {robot: rover, action: rover_arm, mode: carry, why: "Lift it"}
+  - {robot: rover, action: rover_check_grip, why: "Camera checks that it is held"}
+  - {robot: rover, action: rover_goto, target: "$home", why: "Bring it back to base"}
+  - {robot: rover, action: rover_grip, mode: open, why: "Release it"}
+  - {robot: rover, action: rover_arm, mode: home, why: "Stow the arm"}
+  - {robot: manager, action: report, text: "Our drone is back at the base.", why: "Tell the operator"}

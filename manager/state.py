@@ -50,13 +50,16 @@ class Store:
         with self.lock:
             self.reset()
             self._mission_counter += 1
-            self.mission = MissionInfo(id=f"m{self._mission_counter}", text=text, status="planning")
+            self.mission = MissionInfo(id=f"m{self._mission_counter}", text=text, status="planning",
+                                       started_at=time.time())
             self.say("human", text)
             return self.mission.id
 
     # ------------------------------------------------------------ mission fields
     def set_status(self, status: str, **fields):
         with self.lock:
+            if status in ("done", "failed", "stopped"):
+                fields.setdefault("finished_at", time.time())
             self.mission = self.mission.model_copy(update={"status": status, **fields})
             self.event("status", status=status, **fields)
 

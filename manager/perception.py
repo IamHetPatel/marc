@@ -3,7 +3,7 @@
 VLM distance estimates are never used for control. `point` returns where the target is in the image
 (pixels); tools compare that to the calibrated grip line.
 """
-from typing import Optional, Protocol
+from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel
 
@@ -15,7 +15,7 @@ class Perception(Protocol):
         """-> {col, row, label} in image pixels, or None if the target is not visible."""
 
     def inspect(self, jpeg: bytes, question: str) -> dict:
-        """-> {answer, label, confidence, grippable}"""
+        """-> {answer, label, confidence, grippable, category, hazardous, reason}"""
 
     def holding(self, jpeg: bytes) -> dict:
         """-> {holding, reason}"""
@@ -36,6 +36,9 @@ class _Inspection(BaseModel):
     label: str
     confidence: float
     grippable: bool
+    category: Literal["own_drone", "hostile_drone", "not_a_drone", "unknown"]
+    hazardous: bool
+    reason: str
 
 
 class _Holding(BaseModel):
@@ -61,11 +64,18 @@ class GeminiPerception:
         return None
 
     def inspect(self, jpeg, question):
-        prompt = (f"You are the camera of a small ground robot. {question} "
+        prompt = (f"You are the camera of a small ground robot that recovers crashed drones from a field. {question} "
                   "Answer as JSON: answer (one sentence), label (the main object, 1-3 words, or 'nothing'), "
-                  "confidence (0-1), grippable (can a small two-finger gripper pick it up).")
+                  "confidence (0-1), grippable (can a small two-finger gripper pick it up), "
+                  "category (own_drone | hostile_drone | not_a_drone | unknown), hazardous (bool), "
+                  "reason (one short sentence). "
+                  "Visual cues our team uses: a drone with RED tape is hostile and may carry a payload; a drone "
+                  "with BLUE tape is ours; a bottle, box or anything else that is not a drone is not_a_drone. "
+                  "If you cannot tell what it is, category is unknown. Treat every drone that is not clearly "
+                  "ours, and every unknown object, as hazardous.")
         r = self.llm.generate(prompt, _Inspection, images=[jpeg], tag="inspect")
-        return {"answer": r.answer, "label": r.label, "confidence": r.confidence, "grippable": r.grippable}
+        return {"answer": r.answer, "label": r.label, "confidence": r.confidence, "grippable": r.grippable,
+                "category": r.category, "hazardous": r.hazardous, "reason": r.reason}
 
     def holding(self, jpeg):
         prompt = ("Look at the robot gripper at the bottom of this camera image. Is it holding an object? "
@@ -75,6 +85,12 @@ class GeminiPerception:
 
 
 # ---------------------------------------------------------------- Mock: ground truth from the mock world
+KIND_TRIAGE = {                       # mock object kind -> (category, hazardous, reason)
+    "hostile_drone": ("hostile_drone", True, "red tape: possible payload"),
+    "own_drone": ("own_drone", False, "blue tape: one of ours"),
+    "decoy": ("not_a_drone", False, "it is not a drone"),
+    "unknown": ("unknown", True, "cannot tell what it is, so treat it as hazardous"),
+}
 GENERIC_WORDS = {"object", "thing", "item", "obstacle", "anything", "unknown"}
 
 
@@ -99,11 +115,13 @@ class MockPerception:
     def inspect(self, jpeg, question):
         vis = self.world.visible()
         if not vis:
-            return {"answer": "The floor in front of the robot is empty.", "label": "nothing",
-                    "confidence": 0.9, "grippable": False}
+            return {"answer": "The floor in front of the robot is empty.", "label": "nothing", "confidence": 0.9,
+                    "grippable": False, "category": "unknown", "hazardous": False, "reason": "nothing is there"}
         o, p = min(vis, key=lambda op: op[1]["f"])
-        return {"answer": f"A {o['label']} about {p['f']:.1f} m ahead.", "label": o["label"],
-                "confidence": 0.9, "grippable": bool(o.get("grippable"))}
+        category, hazardous, reason = KIND_TRIAGE.get(o.get("kind", "unknown"), KIND_TRIAGE["unknown"])
+        return {"answer": f"A {o['label']} about {p['f']:.1f} m ahead.", "label": o["label"], "confidence": 0.9,
+                "grippable": bool(o.get("grippable")), "category": category, "hazardous": hazardous,
+                "reason": reason}
 
     def holding(self, jpeg):
         held = self.world.held

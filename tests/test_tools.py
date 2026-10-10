@@ -166,6 +166,9 @@ def test_full_pick_and_return_sequence(ctx):
     assert go(ctx, "rover_arm", mode="pick")["ok"] and go(ctx, "rover_grip", mode="open")["ok"]
     approach = go(ctx, "rover_approach", target="crashed drone")
     assert approach["in_reach"] and approach["steps"] >= 2
+    assert go(ctx, "rover_grip", mode="close")["blocked"] == "authorization"     # hostile: the gate says no
+    ctx.ask = lambda question: "yes"
+    assert go(ctx, "request_authorization", finding_id="f1")["authorized"] is True
     assert go(ctx, "rover_grip", mode="close")["ok"] and go(ctx, "rover_arm", mode="carry")["ok"]
     assert go(ctx, "rover_check_grip")["holding"] is True
     assert go(ctx, "rover_goto", target="$home")["arrived"]

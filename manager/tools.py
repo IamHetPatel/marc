@@ -35,6 +35,9 @@ GOTO_TIMEOUT_S = 60.0
 GOTO_GAIN = 0.8
 FINDING_STANDOFF_M = 0.6        # stop this far short of a drone finding so the camera can see it
 INSPECT_FINDING_RADIUS_M = 1.5
+UNFLAGGED_AHEAD_M = 0.6         # rover_inspect registers an unflagged object this far in front of the rover
+GRIP_GATE_RADIUS_M = 1.0        # a hazardous, unauthorized finding this close blocks closing the gripper
+RECOVERED_RADIUS_M = 1.5
 
 
 LOCATION_ACTIONS = {"rover_goto", "drone_scan", "drone_mark", "drone_search"}     # args["target"] is a place
@@ -177,6 +180,16 @@ def succeeded(name: str, result: dict) -> bool:
 
 
 # ---------------------------------------------------------------- the dispatcher
+def _authorization_gate(ctx: Ctx) -> Optional[str]:
+    """Closing the gripper on something hazardous needs the operator's yes. Enforced here, in code, so it holds for
+    scripted plans, AI plans and manual control alike (a prompt can be talked out of it, this cannot)."""
+    pose = ctx.loc.rover_pose()
+    f = ctx.store.nearest_finding(pose.x, pose.y, GRIP_GATE_RADIUS_M)
+    if f is not None and f.hazardous and not f.authorized:
+        return f"not authorized: {f.id} ({f.category or 'unknown'}) is hazardous; ask the operator first"
+    return None
+
+
 def _separation_violation(ctx: Ctx, name: str, args: dict) -> Optional[str]:
     """Without docking nothing rides on the rover, so the rule is geometric: a drone flying lower than the mark
     height must stay `separation_m` (x/y) away from wherever the rover is going. Fails open if a robot does not
@@ -219,6 +232,8 @@ def run_action(ctx: Ctx, name: str, args: dict) -> dict:
     if spec.fault and ctx.faults is not None and ctx.faults.hit(spec.fault):
         return _err(f"injected failure ({spec.fault})", injected=True)
     try:
+        if name == "rover_grip" and args.get("mode") == "close" and (msg := _authorization_gate(ctx)):
+            return _err(msg, blocked="authorization")
         return spec.fn(ctx, args)
     except UnresolvedRef as e:
         return _err(str(e), unresolved=e.kind)
@@ -542,9 +557,17 @@ def rover_inspect(ctx: Ctx, args: dict) -> dict:
     r = ctx.perception.inspect(jpeg, args["question"])
     pose = ctx.loc.rover_pose()
     finding = ctx.store.nearest_finding(pose.x, pose.y, INSPECT_FINDING_RADIUS_M)
+    if finding is None and r.get("label") != "nothing":
+        # nobody flagged this (e.g. a manual drive): register it just ahead of the rover so it can be tracked
+        c, s = math.cos(math.radians(pose.yaw)), math.sin(math.radians(pose.yaw))
+        (finding,) = ctx.store.add_findings([{"x": pose.x + UNFLAGGED_AHEAD_M * c, "y": pose.y + UNFLAGGED_AHEAD_M * s,
+                                              "by": "rover"}])
     if finding:
-        ctx.store.update_finding(finding.id, label=r.get("label"), confidence=r.get("confidence"),
-                                 image_id=image_id)
+        fields = {"label": r.get("label"), "confidence": r.get("confidence"), "image_id": image_id,
+                  "category": r.get("category"), "hazardous": r.get("hazardous")}
+        if finding.status == "found":
+            fields["status"] = "inspected"
+        ctx.store.update_finding(finding.id, **fields)
     ctx.store.say("ai", f"Rover camera: {r.get('answer')}")
     return {"ok": True, **r, "image_id": image_id, "finding_id": finding.id if finding else None}
 
@@ -562,6 +585,10 @@ def rover_check_grip(ctx: Ctx, args: dict) -> dict:
     jpeg = ctx.rover.snapshot()
     image_id = ctx.store.add_image(jpeg)
     r = ctx.perception.holding(jpeg)
+    if r.get("holding"):
+        pose = ctx.loc.rover_pose()
+        if (f := ctx.store.nearest_finding(pose.x, pose.y, RECOVERED_RADIUS_M)) is not None:
+            ctx.store.update_finding(f.id, status="recovered")
     return {"ok": True, **r, "image_id": image_id}
 
 
@@ -581,6 +608,27 @@ def report(ctx: Ctx, args: dict) -> dict:
     fid = args.get("finding_id")
     finding = ctx.store.get_finding(fid) if fid else None
     return {"ok": True, "finding_id": fid, "image_id": finding.image_id if finding else None}
+
+
+@action("manager", needs=(("finding_id",),))
+def request_authorization(ctx: Ctx, args: dict) -> dict:
+    """Ask the human operator whether the rover may pick up a finding, and wait for the answer. Required before
+    handling anything hazardous: the gripper will not close on a hazardous finding without it. A "no" skips the
+    item. Args: finding_id, e.g. "f1". Returns: {authorized}."""
+    f = ctx.store.get_finding(args["finding_id"])
+    if f is None:
+        return _err(f"no finding {args['finding_id']!r}")
+    question = (f"Finding {f.id} looks like a {(f.category or 'object').replace('_', ' ')}"
+                f"{' and is hazardous' if f.hazardous else ''}. Authorize the rover to pick it up? (yes/no)")
+    ctx.store.say("ai", question)
+    answer = ctx.ask(question) if ctx.ask else None
+    if answer is None:
+        return _err("no answer received from the operator")
+    if answer.strip().lower().startswith("y"):
+        ctx.store.update_finding(f.id, authorized=True)
+        return {"ok": True, "authorized": True, "finding_id": f.id}
+    ctx.store.update_finding(f.id, status="skipped")
+    return {"ok": False, "authorized": False, "finding_id": f.id, "error": "operator declined"}
 
 
 @action("manager", needs=(("question",),))

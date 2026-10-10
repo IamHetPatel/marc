@@ -123,6 +123,12 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         guarded(ctrl().manual, body.action, body.args)
         return {"ok": True}
 
+    @app.get("/report")
+    def report():
+        if ctrl().store.mission.id is None:
+            raise HTTPException(status_code=404, detail="no mission yet")
+        return ctrl().build_report()
+
     @app.get("/arena")
     def arena():
         return ctrl().base_ctx.arena.model_dump(exclude={"mock_objects"})

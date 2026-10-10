@@ -7,7 +7,7 @@ app = Flask(__name__)
 # Change MOCK to "0" by default now since you have the drone connected!
 MOCK = os.getenv("MOCK", "0") == "1"
 
-URI = "radio://0/80/2M/E7E7E7E704"
+URI = "radio://0/80/2M/E7E7E7E7E7"  # default Crazyflie address (confirmed by scan_drones.py)
 FLY_Z = 0.6  # Default flight height in metres
 DIP_M = 0.12 # zrange dip to detect an object
 

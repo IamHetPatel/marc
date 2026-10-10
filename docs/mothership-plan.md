@@ -21,8 +21,11 @@
 | **M7** simulated detector, `drone_search` | ✅ | `detector.py` |
 | **M8** planner/supervisor on the farmland story | ✅ unit-tested with scripted LLMs; **not run against live Gemini** | `planner.py`, `supervisor.py`, `fallback_plans.py` |
 | **O1** backup: overhead 4K webcam (ArUco calibration, rover tag → pose fix, Gemini `camera_locate`, overhead detector for `drone_search`, dashboard card, `overhead_fetch` scenario, `OVERHEAD_CAM=mock`) | ✅ on synthetic frames; real capture path opened on a laptop webcam; **not run on the floor** | `overhead.py`, `overhead_mock.py` |
-| R1 rover server | ✅ on a fake EP that speaks the plaintext SDK (`tests/test_robot_server.py`, over real sockets with `RoverHttp`); **not run on the real EP yet** | `rover/robot_server.py` |
-| D1, F1 | not ours / not started | |
+| **O1** at any angle (railing camera): parallax towards `camera_floor_xy` | ✅ on synthetic frames | `overhead.py` |
+| **R1** rover server | ✅ on the real EP in STA mode: health, pose, camera, drive; direction check passed. Arm presets and stop-mid-drive not checked yet | `rover/robot_server.py` |
+| **D1** drone server | ✅ flown on the real scout by the drone squad; the mothership drives it in `tests/test_integration.py` (mock radio) | `drone_server.py` |
+| **I1** integration: floor arena, `/health` telemetry, lost-tracking flag, rover video relay, keyless bring-up | ✅ against both servers (mock EP / mock radio); dashboard checked in headless Chromium | `arena.floor.json`, `controller.Monitor`, `server.py` |
+| **F1** floor bring-up | 🟡 cage measured; zones, home, overhead tags, arm presets still provisional | [integration-plan.md](integration-plan.md) |
 
 ~300 tests on mocks (`pytest`), plus opt-in `pytest -m ui` (real browser) and `pytest -m live` (real Gemini). Nothing here has touched a real robot or the real Gemini API.
 

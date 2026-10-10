@@ -40,6 +40,7 @@ class Store:
                 self.metrics: dict = {}
             self.current_step: Optional[str] = None
             self.last_image_id: Optional[str] = None
+            self.manual: Optional[dict] = None
             self._finding_counter = 0
             self._step_counter = 0
             if not hasattr(self, "mentor_present"):
@@ -114,6 +115,18 @@ class Store:
         with self.lock:
             self.plan = [s.model_copy(update={"status": "skipped"}) if s.status == "pending" else s
                          for s in self.plan]
+
+    # ------------------------------------------------------------ manual actions (POST /manual)
+    def start_manual(self, action: str, args: dict) -> dict:
+        with self.lock:
+            self.manual = {"action": action, "args": args, "status": "running", "result": None}
+            return self.manual
+
+    def finish_manual(self, record: dict, status: str, result: dict):
+        """Only the latest manual action may write its outcome; a stale one (new mission, reset) is dropped."""
+        with self.lock:
+            if self.manual is record:
+                self.manual = {**record, "status": status, "result": result}
 
     # ------------------------------------------------------------ findings
     def add_findings(self, raw: list, by: str = "drone") -> list[Finding]:
@@ -193,6 +206,7 @@ class Store:
                 "messages": [m.model_dump() for m in self.messages],
                 "log": list(self.log[-60:]),
                 "last_image_id": self.last_image_id,
+                "manual": self.manual,
                 "mentor_present": self.mentor_present,
                 "metrics": dict(self.metrics),
             }

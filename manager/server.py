@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .controller import Conflict, Controller
+from .tools import validate_step
 
 
 class MissionBody(BaseModel):
@@ -29,6 +30,12 @@ class ChangeBody(BaseModel):
 
 class MentorBody(BaseModel):
     present: bool
+
+
+class ManualBody(BaseModel):
+    robot: str
+    action: str
+    args: dict = {}
 
 
 def create_app(controller: Optional[Controller] = None) -> FastAPI:
@@ -77,6 +84,17 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
     def change(body: ChangeBody):
         guarded(ctrl().change, body.text)
         return {"ok": True}
+
+    @app.post("/manual", status_code=202)
+    def manual(body: ManualBody):
+        if (msg := validate_step(body.action, body.robot, body.args)):
+            raise HTTPException(status_code=422, detail=msg)
+        guarded(ctrl().manual, body.action, body.args)
+        return {"ok": True}
+
+    @app.get("/arena")
+    def arena():
+        return ctrl().base_ctx.arena.model_dump(exclude={"mock_objects"})
 
     @app.post("/stop")
     def stop():

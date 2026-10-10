@@ -346,6 +346,28 @@ def _bearing_deg(cam, col: float) -> float:
     return math.degrees(math.atan((cam.width / 2 - col) / (cam.width / 2) * half))
 
 
+@action("rover")
+def rover_snapshot(ctx: Ctx, args: dict) -> dict:
+    """Take one photo with the rover camera and keep it for the dashboard. Returns: {image_id}."""
+    image_id = ctx.store.add_image(ctx.rover.snapshot())
+    return {"ok": True, "image_id": image_id}
+
+
+@action("rover", needs=(("x", "y", "z"),), moves_rover=True)
+def rover_drive(ctx: Ctx, args: dict) -> dict:
+    """Move the rover relative to where it is: x metres forward, y metres left, z degrees turn-left
+    (clamped to 1 m and 90 degrees per call; never leaves the arena). For manual control: plans should use
+    rover_goto instead. Returns: {pose, pose_source}."""
+    x, y, z = ctx.safety.clamp_move(args["x"], args["y"], args["z"])
+    pose = ctx.loc.rover_pose()
+    c, s = math.cos(math.radians(pose.yaw)), math.sin(math.radians(pose.yaw))
+    if (msg := ctx.safety.rover_target(pose.x + c * x - s * y, pose.y + s * x + c * y)):
+        return _err(msg)
+    res = _norm(ctx.rover.drive(x, y, z))
+    after = ctx.loc.rover_pose()
+    return {**res, "pose": after.as_dict(), "pose_source": after.source}
+
+
 @action("rover", needs=(("target",), ("x", "y")), ok_key="arrived", moves_rover=True, fault="goto")
 def rover_goto(ctx: Ctx, args: dict) -> dict:
     """Drive the rover to a place using metric navigation (about +-15 cm). For a drone finding it stops

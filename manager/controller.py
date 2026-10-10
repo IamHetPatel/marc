@@ -17,6 +17,7 @@ from .executor import Budget, Executor
 from .llm import call_with_timeout
 from .planner import Planner, drafts_to_steps
 from .supervisor import Supervisor
+from .tools import run_action, succeeded
 
 log = logging.getLogger("manager.controller")
 
@@ -42,6 +43,7 @@ class Controller:
         self._answer: Optional[str] = None
         self._answer_event = threading.Event()
         self.budget = Budget()
+        self._manual_busy = False
         self.monitor = Monitor(self)
         self.world = None                       # set by runtime.build_controller when anything is mocked
 
@@ -95,6 +97,27 @@ class Controller:
                     self._changes.append(text)                     # applied after the current atomic step
             else:
                 raise Conflict(f"no active mission to change (state is {st})")
+
+    def manual(self, action: str, args: dict):
+        """Run one tool right now, through the same validation and safety as a plan step (POST /manual).
+        Only between missions, one at a time. `stop()` cancels it."""
+        with self._lock:
+            if self.store.status not in IDLE_STATES:
+                raise Conflict(f"manual control is for between missions (state is {self.store.status})")
+            if self._manual_busy:
+                raise Conflict("a manual action is still running")
+            if self._cancel.is_set():
+                self._new_epoch()                  # a Stop spends the epoch; manual control needs a fresh one
+            ctx = dataclasses.replace(self.base_ctx, cancel=self._cancel, ask=None, drone_out=self._drone_in_air())
+            record = self.store.start_manual(action, args)
+            self._manual_busy = True
+        threading.Thread(target=self._manual_job, args=(ctx, action, args, record), daemon=True).start()
+
+    def _manual_job(self, ctx, action: str, args: dict, record: dict):
+        result = run_action(ctx, action, args)
+        with self._lock:
+            self._manual_busy = False
+            self.store.finish_manual(record, "done" if succeeded(action, result) else "failed", result)
 
     def stop(self, reason: str = "Emergency stop") -> dict:
         """Works from any state. Safety first: cancel, halt the robots, then update the state."""
@@ -171,6 +194,8 @@ class Controller:
     # ------------------------------------------------------------ running
     def _start_run(self):
         """Caller holds the lock and has checked the state."""
+        if self._manual_busy:
+            raise Conflict("a manual action is still running; wait for it or press Stop")
         cancel = self._cancel
         run_ctx = dataclasses.replace(self.base_ctx, cancel=cancel, ask=self._ask,
                                       drone_out=self._drone_in_air())

@@ -244,8 +244,10 @@ class Scout:
             return f"refusing takeoff: {snap['error']}"
         if (err := _outside_cage(snap["x"], snap["y"], margin=TAKEOFF_MARGIN_M)):
             return f"refusing takeoff: {err} (takeoff allows {TAKEOFF_MARGIN_M} m more)"
-        self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
-        print(f"Taking off from {self.takeoff_pos} to z={z}")
+        if self.takeoff_pos is None or self.state == "docked":    # home = the pad, not wherever /land left it
+            self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
+            print(f"Home (dock target) set to {self.takeoff_pos}")
+        print(f"Taking off to z={z}")
         if MOCK:
             self.link.pose["z"] = z
             self.state = "flying"
@@ -337,18 +339,27 @@ class Scout:
         return self._motion(run)
 
     def dock(self):
-        if self.state != "flying":
-            return {"ok": True, "docked": self.state == "docked", "state": self.state}
+        """Back to the home pad (first takeoff spot) and land. Works from the air or after /land elsewhere."""
+        if self.state == "docked":
+            return {"ok": True, "docked": True, "pose": self.pose()}
         if self.takeoff_pos is None:
-            return {"ok": False, "docked": False, "error": "no takeoff position recorded"}
+            return {"ok": False, "docked": False, "error": "no home recorded: the drone has not taken off yet"}
 
         def run(gen):
             tx, ty = self.takeoff_pos["x"], self.takeoff_pos["y"]
-            print(f"Docking: back to ({tx}, {ty}) at z={DOCK_Z}")
-            if (err := self._goto(tx, ty, DOCK_Z, gen)):
+            if self.state != "flying" and math.dist((self.link.pose["x"], self.link.pose["y"]), (tx, ty)) < 0.1:
+                self.state = "docked"                  # already sitting on the pad
+                return {"ok": True, "docked": True, "pose": self.pose()}
+            if (err := self._takeoff(FLY_Z, gen)):
                 return {"ok": False, "docked": False, "error": err}
+            cruise_z = max(self.link.pose["z"], 0.3)
+            print(f"Docking: back to ({tx}, {ty}) at z={cruise_z:.2f}, then down to {DOCK_Z}")
+            for z in (cruise_z, DOCK_Z):              # across at height, then descend over the pad
+                if (err := self._goto(tx, ty, z, gen)):
+                    return {"ok": False, "docked": False, "error": err}
             self._send_land(duration=DOCK_Z / 0.15)
-            self._wait(DOCK_Z / 0.15 + 0.3, gen)
+            if not self._wait(DOCK_Z / 0.15 + 0.3, gen):
+                return {"ok": False, "docked": False, "error": "interrupted by land"}
             self.state = "docked"
             return {"ok": True, "docked": True, "pose": self.pose()}
         return self._motion(run)
@@ -475,7 +486,7 @@ def land():
 
 @app.route("/dock")
 def dock():
-    """Fly back to the takeoff spot and land slowly on the plate."""
+    """Fly back to the home pad (first takeoff spot) and land; takes off first if it was landed elsewhere."""
     return jsonify(scout.dock())
 
 

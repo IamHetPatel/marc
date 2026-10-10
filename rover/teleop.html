@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboMaster teleop</title>
+<style>
+  body {
+    margin: 0;
+    background: #121212;
+    color: #f2f2f2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+  img {
+    width: min(960px, 100%);
+    aspect-ratio: 16 / 9;
+    background: #000;
+    object-fit: contain;
+  }
+  #status { font-size: 20px; margin: 0; text-align: center; }
+  #result { margin: 0; color: #8fd18f; font-family: ui-monospace, Menlo, monospace; font-size: 13px; min-height: 1.2em; }
+  .hint { margin: 0; color: #b5b5b5; font-size: 15px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  button {
+    background: #2c2c2c;
+    color: white;
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button.stop { background: #b3261e; }
+</style>
+</head>
+<body>
+<main>
+  <img id="video" alt="Robot camera" src="/video">
+  <p id="status">Connecting...</p>
+  <p id="result"></p>
+  <p class="hint">W forward &nbsp; S back &nbsp; A left &nbsp; D right &nbsp; Q turn left &nbsp; E turn right &nbsp; I drive 1 m &nbsp; Space stop</p>
+  <p class="hint">O open &nbsp; C close &nbsp; ↑ arm forward/up &nbsp; ↓ arm back/down</p>
+  <div class="controls">
+    <button type="button" class="stop" data-call="/stop">Stop</button>
+    <button type="button" data-call="/grip?action=open">Open gripper</button>
+    <button type="button" data-call="/grip?action=close">Close gripper</button>
+    <button type="button" data-call="/arm?x=40&y=50">Arm up</button>
+    <button type="button" data-call="/arm?x=-40&y=-50">Arm down</button>
+    <button type="button" data-call="/arm?preset=pick">Arm: pick</button>
+    <button type="button" data-call="/arm?preset=carry">Arm: carry</button>
+    <button type="button" data-call="/arm?preset=home">Arm: home</button>
+  </div>
+</main>
+<script>
+// Every control goes through the same JSON API the mothership uses (see robot_server.py).
+// API frame: +y = left, +z = turn left (counter-clockwise).
+const SPEED = 0.4;      // m/s
+const YAW = 60;         // deg/s
+const HOLD_T = 0.5;     // s; the robot stops by itself this long after the last /speed
+const held = new Set();
+const driveKeys = new Set(["w", "a", "s", "d", "q", "e"]);
+
+async function call(path, show = true) {
+  try {
+    const body = await (await fetch(path)).json();
+    if (show) document.getElementById("result").textContent = `${path} → ${JSON.stringify(body)}`;
+    return body;
+  } catch (error) {
+    if (show) document.getElementById("result").textContent = `${path} → ${error}`;
+  }
+}
+
+function sendSpeed() {
+  if (held.size === 0) return;
+  const x = (held.has("w") ? SPEED : 0) - (held.has("s") ? SPEED : 0);
+  const y = (held.has("a") ? SPEED : 0) - (held.has("d") ? SPEED : 0);
+  const z = (held.has("q") ? YAW : 0) - (held.has("e") ? YAW : 0);
+  call(`/speed?x=${x}&y=${y}&z=${z}&t=${HOLD_T}`, false);
+}
+setInterval(sendSpeed, 150);
+
+function release() {
+  if (held.size === 0) return;
+  held.clear();
+  call("/stop");
+}
+
+document.querySelectorAll("[data-call]").forEach((button) =>
+  button.addEventListener("click", () => call(button.dataset.call)));
+
+addEventListener("keydown", (event) => {
+  const key = event.key.toLowerCase();
+  const once = {
+    " ": "/stop",
+    i: "/drive?x=1",
+    o: "/grip?action=open",
+    c: "/grip?action=close",
+    arrowup: "/arm?x=40&y=50",
+    arrowdown: "/arm?x=-40&y=-50",
+  }[key];
+  if (once) {
+    event.preventDefault();
+    if (key === " ") held.clear();
+    if (!event.repeat) call(once);
+    return;
+  }
+  if (!driveKeys.has(key) || event.repeat) return;
+  event.preventDefault();
+  held.add(key);
+  sendSpeed();
+});
+
+addEventListener("keyup", (event) => {
+  const key = event.key.toLowerCase();
+  if (!held.delete(key)) return;
+  event.preventDefault();
+  if (held.size === 0) call("/stop", false);
+  else sendSpeed();
+});
+
+addEventListener("blur", release);
+
+async function refreshStatus() {
+  const h = await call("/health", false);
+  document.getElementById("status").textContent = !h
+    ? "Server not answering..."
+    : h.ok ? `${h.mock ? "MOCK · " : ""}${h.last} · battery ${h.battery}% · camera ${h.camera}` : h.error;
+}
+setInterval(refreshStatus, 500);
+refreshStatus();
+</script>
+</body>
+</html>

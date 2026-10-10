@@ -43,9 +43,10 @@ class Config:
     rover_max_move_m: float = 1.0        # per relative move
     drone_min_battery_v: float = 3.3
     watchdog_fails: int = 4              # consecutive failed polls (0.5 s apart) while moving
-    # --- rover server conventions (rover squad must confirm; see docs/ai-manager-plan.md §10)
-    rover_speed_y_sign: float = -1.0     # fleet.py sends -left to /speed (SDK: +y = right)
-    rover_drive_y_sign: float = 1.0      # brain.py documents /drive y as left_m
+    # --- rover server conventions: rover/robot_server.py takes y = LEFT on /speed and /drive (it converts to
+    # the SDK's +y = right itself); -1 only for a server that speaks raw SDK signs
+    rover_speed_y_sign: float = 1.0
+    rover_drive_y_sign: float = 1.0
     rover_arm_mode: str = "preset"       # "preset" -> /arm?preset=pick ; "relative" -> /arm?x&y deltas
     # --- farmland story (docs/mothership-plan.md §1.4, §1.5): no docking, a simulated downward-camera detector
     dock_mode: bool = False              # DOCK_MODE=1 brings back "drone rides the rover plate" (ai-manager-plan §7)

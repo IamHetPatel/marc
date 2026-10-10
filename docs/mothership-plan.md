@@ -20,7 +20,8 @@
 | **M6** triage, authorization gate, disposal, report | ✅ | `tools.py` (`_authorization_gate`), `GET /report` |
 | **M7** simulated detector, `drone_search` | ✅ | `detector.py` |
 | **M8** planner/supervisor on the farmland story | ✅ unit-tested with scripted LLMs; **not run against live Gemini** | `planner.py`, `supervisor.py`, `fallback_plans.py` |
-| R1, D1, F1 | not ours / not started | |
+| R1 rover server | ✅ on a fake EP that speaks the plaintext SDK (`tests/test_robot_server.py`, over real sockets with `RoverHttp`); **not run on the real EP yet** | `rover/robot_server.py` |
+| D1, F1 | not ours / not started | |
 
 ~300 tests on mocks (`pytest`), plus opt-in `pytest -m ui` (real browser) and `pytest -m live` (real Gemini). Nothing here has touched a real robot or the real Gemini API.
 
@@ -147,7 +148,7 @@ R1 and D1 belong to the rover and drone squads. Their specs are here so every ag
 ### 3.1 Units and frames
 
 - Metres, Lighthouse frame (origin and axes as set in cfclient's Lighthouse geometry). Yaw in degrees, counter-clockwise, 0 = +x.
-- **Rover body frame** (used in `adapters/base.py`): x forward, **y left**, z = turn-left degrees. The rover server may use the SDK's +y = right internally; the client flips the sign with `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` (see F1).
+- **Rover body frame** (used in `adapters/base.py`): x forward, **y left**, z = turn-left degrees. `rover/robot_server.py` uses this frame on every endpoint and converts to the SDK's +y = right / +z = clockwise itself, so `ROVER_SPEED_Y_SIGN` / `ROVER_DRIVE_Y_SIGN` stay at their default `1`.
 - Every response is JSON with `"ok": true|false`. Errors use `{"ok": false, "error": "<text>"}` with HTTP 200, so clients can read them. Use non-200 only for "server broken".
 
 ### 3.2 Step format (plans from any source)
@@ -165,6 +166,8 @@ References: `$finding.<id>`, `$zone.<name>`, `$home`, or `"x,y"`.
 ## 4. Robot servers (other squads; specs for their agents)
 
 ### 4.1 WP-R1: `robot_server.py` (Windows laptop, Python 3.8, port 8000)
+
+> **As built (`rover/robot_server.py`):** the endpoints, lock, watchdog and `MOCK=1` rules below hold, but it talks DJI's **plaintext SDK** over TCP (like the rover squad's `control1.py`) instead of the `robomaster` package. So it runs on any Mac/Linux laptop on the hotspot, with the EP in STA mode (`ROBOT_HOST=<ep-ip>`). Extras: `/health` also reports camera and last action, `/pose?reset=1`, `/arm` with no params reads the position (for tuning presets), and a teleop page at `/`. See [rover/README.md](../rover/README.md).
 
 **Goal:** wrap the RoboMaster SDK in a small threaded HTTP server.
 

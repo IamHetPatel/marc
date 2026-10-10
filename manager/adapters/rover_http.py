@@ -1,8 +1,7 @@
-"""HTTP client for the rover squad's robot_server.py (:8000).
+"""HTTP client for rover/robot_server.py (:8000): /speed /drive /grip /arm /snapshot /stop /pose.
 
-Endpoints as the starter code calls them: /speed /drive /grip /arm /snapshot /stop /pose.
-Y-axis sign conventions are config, because the starter files disagree (README §5): brain.py documents
-/drive y as left, fleet.py sends -left to /speed (RoboMaster SDK: +y = right).
+The server takes +y = left everywhere. The y signs stay configurable for a server that passes raw SDK
+signs (+y = right) through.
 """
 import time
 

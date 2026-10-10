@@ -47,26 +47,28 @@
     <div class="boot-text">Connecting to the mothership</div>
   </div>
 
+
   <header class="topbar">
     <div class="brand">
       <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" class="ring"/><path d="M16 2.5v6M16 23.5v6M2.5 16h6M23.5 16h6" class="cross"/><circle cx="24.6" cy="7.4" r="2.7" class="orbit"/></svg>
-      <div class="brand-text"><b>FleetPilot</b><span>Mothership</span></div>
+      <div class="brand-text"><b>FleetPilot</b><span>Drone recovery</span></div>
     </div>
 
-    <div class="mission-line">
-      <span id="status" class="pill s-idle" title="Mission status">idle</span>
-      <span id="source" class="tag" title="Where the plan came from" hidden></span>
-      <span id="mission-title" class="mission-title"></span>
-    </div>
+    <nav class="vnav" role="tablist" aria-label="Sections">
+      <button role="tab" class="vtab" id="nav-mission" data-view="mission" aria-controls="view-mission" aria-selected="true"><svg class="ic"><use href="#i-target"/></svg><span>Mission</span><i class="dot" aria-hidden="true"></i></button>
+      <button role="tab" class="vtab" id="nav-plan" data-view="plan" aria-controls="view-plan" aria-selected="false"><svg class="ic"><use href="#i-doc"/></svg><span>Plan</span><em class="badge" id="plan-nav-count" hidden></em></button>
+      <button role="tab" class="vtab" id="nav-fleet" data-view="fleet" aria-controls="view-fleet" aria-selected="false"><svg class="ic"><use href="#i-hub"/></svg><span>Fleet</span><i class="dot" aria-hidden="true"></i></button>
+      <button role="tab" class="vtab" id="nav-evidence" data-view="evidence" aria-controls="view-evidence" aria-selected="false"><svg class="ic"><use href="#i-camera"/></svg><span>Evidence</span><em class="badge" id="findings-count">0</em></button>
+    </nav>
 
     <div class="topbar-right">
       <div class="lights" title="Connection to each robot">
-        <span class="light off" id="light-rover"><i></i><span>Rover</span><em id="rtt-rover"></em></span>
-        <span class="light off" id="light-drone"><i></i><span>Scout</span><em id="rtt-drone"></em></span>
+        <span class="light off" id="light-rover"><i></i><span>Rover</span></span>
+        <span class="light off" id="light-drone"><i></i><span>Scout</span></span>
         <span class="light off" id="light-target"><i></i><span>Target</span></span>
       </div>
-      <label class="mentor" title="Drones stay locked until a mentor is present">
-        <input class="switch" type="checkbox" id="mentor"><span>Mentor present</span>
+      <label class="mentor" title="Drone flights stay locked until a mentor is present">
+        <input class="switch" type="checkbox" id="mentor"><span>Mentor</span>
       </label>
       <button id="theme" class="icon-btn" type="button" title="Switch light / dark theme" aria-label="Switch light or dark theme">
         <svg class="ic ic-moon"><use href="#i-moon"/></svg><svg class="ic ic-sun"><use href="#i-sun"/></svg>
@@ -83,159 +85,158 @@
     <svg class="ic"><use href="#i-alert"/></svg><span id="banner-text"></span>
   </div>
 
-  <main class="shell">
-    <!-- ============ left: the field ============ -->
-    <section class="stage" aria-label="Field overview">
-      <div class="map-card" id="map-card">
-        <div class="map-head">
-          <div class="legend" aria-label="Map legend">
-            <span><i class="sw rover"></i>Rover</span><span><i class="sw scout"></i>Scout</span>
-            <span><i class="sw target"></i>Target (truth)</span><span><i class="sw finding"></i>Finding</span>
+  <main class="views">
+    <!-- ================================================================ MISSION: the live story -->
+    <section class="view view-mission" id="view-mission" role="tabpanel" aria-labelledby="nav-mission">
+      <ol class="phases" id="phases" aria-label="Mission phases"></ol>
+
+      <div class="mission-grid">
+        <div class="map-card" id="map-card">
+          <div class="map-head">
+            <div class="legend" aria-label="Map legend">
+              <span><i class="sw rover"></i>Rover</span><span><i class="sw scout"></i>Scout drone</span>
+              <span><i class="sw target"></i>Crashed drone</span><span><i class="sw finding"></i>Detection</span>
+            </div>
+            <span id="readout" class="readout">x &ndash; &middot; y &ndash;</span>
           </div>
-          <span id="calibration" class="warnchip" hidden></span>
-          <span id="readout" class="readout">x &ndash; &middot; y &ndash;</span>
+          <div class="map-body"><svg id="map" role="img" aria-label="Map of the field with the robots" preserveAspectRatio="xMidYMid meet"></svg></div>
+          <div class="ticker" aria-live="polite"><span id="ticker-role" class="role">AI</span><span id="ticker-text">Waiting for a mission.</span></div>
         </div>
-        <div class="map-body"><svg id="map" role="img" aria-label="Map of the field with the robots" preserveAspectRatio="xMidYMid meet"></svg></div>
-      </div>
 
-      <div class="side" aria-label="Rover camera and robot status">
-        <button class="cam" id="live-card" type="button" aria-label="Rover camera, live, click to enlarge" hidden>
-          <img id="live" alt="Rover camera, live video" hidden>
-          <span id="live-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>Connecting to the rover camera</span>
-          <span class="cam-bar"><i class="rec"></i><span>Rover live</span><em id="live-info"></em></span>
-        </button>
-        <button class="cam" id="camera-card" type="button" aria-label="Rover camera, click to enlarge">
-          <img id="camera" alt="Latest rover camera image" hidden>
-          <span id="camera-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No camera frame yet</span>
-          <span class="cam-bar"><i class="rec"></i><span id="camera-label">Rover camera</span><em id="camera-id"></em></span>
-        </button>
-        <button class="cam" id="overhead-card" type="button" aria-label="Overhead camera, click to enlarge" hidden>
-          <img id="overhead" alt="Overhead camera: the field from above" hidden>
-          <span id="overhead-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No overhead frame yet</span>
-          <span class="cam-bar"><i class="rec"></i><span>Overhead</span><em id="overhead-info"></em></span>
-        </button>
-        <article class="unit rover" id="unit-rover">
-          <header><svg class="ic"><use href="#i-rover"/></svg><b>Rover</b><span id="rover-chip" class="chip" hidden></span></header>
-          <div class="nums"><span><em>x</em><b id="rover-x">&ndash;</b></span><span><em>y</em><b id="rover-y">&ndash;</b></span><span><em>hdg</em><b id="rover-h">&ndash;</b></span></div>
-          <div class="foot"><span id="rover-source" class="muted">no position yet</span></div>
-          <div class="foot sub"><span id="rover-health" class="muted"></span></div>
-        </article>
-        <article class="unit scout" id="unit-scout">
-          <header><svg class="ic"><use href="#i-scout"/></svg><b>Scout</b><span id="scout-chip" class="chip" hidden></span></header>
-          <div class="nums"><span><em>x</em><b id="scout-x">&ndash;</b></span><span><em>y</em><b id="scout-y">&ndash;</b></span><span><em>z</em><b id="scout-z">&ndash;</b></span></div>
-          <div class="foot"><div class="battery" id="battery" title="Battery"><i></i><i></i><i></i><i></i><i></i></div><span id="scout-batt" class="muted">&ndash;</span></div>
-          <div class="foot sub"><span id="scout-health" class="muted"></span></div>
-        </article>
-        <article class="unit target" id="unit-target">
-          <header><svg class="ic"><use href="#i-target"/></svg><b>Target</b><span class="chip ghost">truth</span></header>
-          <div class="nums"><span><em>x</em><b id="target-x">&ndash;</b></span><span><em>y</em><b id="target-y">&ndash;</b></span></div>
-          <div class="foot"><span id="target-note" class="muted">second Crazyflie, read from Lighthouse</span></div>
-        </article>
-        <section class="card side-finds" id="side-finds" aria-label="Findings so far">
-          <header class="card-head"><h2>Findings</h2><button id="to-findings" type="button" class="link">Details</button></header>
-          <ul id="find-cards" class="find-cards"></ul>
-          <p id="find-empty" class="muted">Nothing found yet.</p>
-        </section>
-      </div>
+        <aside class="mission-side" aria-label="Mission control">
+          <!-- whatever needs a human is always first -->
+          <section class="attn q" id="question-card" role="alertdialog" aria-labelledby="question-title" hidden>
+            <header><svg class="ic"><use href="#i-shield"/></svg><h2 id="question-title">Your decision is needed</h2></header>
+            <p id="question-text"></p>
+            <div class="row">
+              <button type="button" id="answer-yes" class="btn primary big">Yes, authorize</button>
+              <button type="button" id="answer-no" class="btn danger big">No, leave it</button>
+            </div>
+          </section>
 
-      <div class="ticker" aria-live="polite"><span id="ticker-role" class="role">AI</span><span id="ticker-text">Waiting for a mission.</span></div>
+          <section class="attn ap" id="approval-card" hidden>
+            <header><svg class="ic"><use href="#i-play"/></svg><h2>The plan is ready</h2></header>
+            <p id="approval-text"></p>
+            <div class="row">
+              <button type="button" id="approve" class="btn primary big" disabled>Approve &amp; run</button>
+              <button type="button" id="adjust" class="btn ghost">Change it</button>
+              <button type="button" id="see-plan" class="btn ghost">See all steps</button>
+            </div>
+          </section>
+
+          <section class="attn res" id="result-card" hidden>
+            <header><svg class="ic" id="result-icon"><use href="#i-check"/></svg><h2 id="result-title"></h2></header>
+            <p id="result-text"></p>
+            <div class="row">
+              <button type="button" id="to-evidence" class="btn ghost"><svg class="ic"><use href="#i-camera"/></svg>Evidence</button>
+              <a id="report-link" class="btn ghost" href="/report" target="_blank" rel="noopener" hidden><svg class="ic"><use href="#i-doc"/></svg>Report</a>
+              <button type="button" class="btn primary" data-reset>New mission</button>
+            </div>
+          </section>
+
+          <!-- idle: what FleetPilot does, and the use cases to start from -->
+          <section class="card start" id="start-panel">
+            <h2 class="pitch">Send robots, not people.</h2>
+            <p class="pitch-sub">A scout drone searches the field, a ground rover checks and recovers what it finds, and a person approves every risky step.</p>
+            <h3 class="sub-head">Pick a use case</h3>
+            <ul id="start-list" class="usecases"></ul>
+            <form id="mission-form" class="field">
+              <label for="mission-text">Or describe your own mission</label>
+              <div class="input-row">
+                <input id="mission-text" type="text" placeholder="A hostile drone crashed in field A. Find it and move it to the disposal zone." autocomplete="off">
+                <button type="submit" id="mission-go" class="btn primary"><svg class="ic"><use href="#i-send"/></svg>Plan it</button>
+              </div>
+            </form>
+          </section>
+
+          <!-- a mission exists: what is happening right now -->
+          <section class="card now" id="now-card" hidden>
+            <header class="now-head">
+              <span id="status" class="pill s-idle" title="Mission status">idle</span>
+              <span id="source" class="tag" title="Where the plan came from" hidden></span>
+              <button id="reset" type="button" class="link">Start over</button>
+            </header>
+            <p id="mission-title" class="mission-title"></p>
+            <div class="now-step">
+              <span id="now-phase" class="now-phase"></span>
+              <b id="now-title" class="now-title"></b>
+              <span id="now-why" class="now-why"></span>
+            </div>
+            <div class="progress" aria-hidden="true"><i id="plan-bar"></i></div>
+            <form id="change-form" class="field" hidden>
+              <label for="change-text">Steer it</label>
+              <div class="input-row">
+                <input id="change-text" type="text" placeholder="e.g. skip field A and search field B instead" autocomplete="off">
+                <button type="submit" id="change-go" class="btn">Send</button>
+              </div>
+            </form>
+          </section>
+
+          <div class="cams">
+            <button class="cam" id="live-card" type="button" aria-label="Rover camera, live, click to enlarge" hidden>
+              <img id="live" alt="Rover camera, live video" hidden>
+              <span id="live-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>Connecting to the rover camera</span>
+              <span class="cam-bar"><i class="rec"></i><span>Rover, live</span><em id="live-info"></em></span>
+            </button>
+            <button class="cam" id="camera-card" type="button" aria-label="Rover camera, click to enlarge">
+              <img id="camera" alt="Latest rover camera image" hidden>
+              <span id="camera-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>The rover's camera shows up here</span>
+              <span class="cam-bar"><i class="rec"></i><span id="camera-label">Rover camera</span></span>
+            </button>
+          </div>
+        </aside>
+      </div>
     </section>
 
-    <!-- ============ right: the operator ============ -->
-    <aside class="ops" aria-label="Mission control">
-      <section class="attn q" id="question-card" role="alertdialog" aria-labelledby="question-title" hidden>
-        <header><svg class="ic"><use href="#i-shield"/></svg><h2 id="question-title">The mission needs your answer</h2></header>
-        <p id="question-text"></p>
-        <div class="row">
-          <button type="button" id="answer-yes" class="btn primary">Yes, authorize</button>
-          <button type="button" id="answer-no" class="btn danger">No, leave it</button>
-        </div>
-      </section>
-
-      <section class="attn ap" id="approval-card" hidden>
-        <header><svg class="ic"><use href="#i-play"/></svg><h2>Plan ready for review</h2></header>
-        <p id="approval-text"></p>
-        <div class="row">
-          <button type="button" id="approve" class="btn primary" disabled>Approve &amp; run</button>
-          <button type="button" id="adjust" class="btn ghost">Adjust the plan</button>
-        </div>
-      </section>
-
-      <section class="attn res" id="result-card" hidden>
-        <header><svg class="ic" id="result-icon"><use href="#i-check"/></svg><h2 id="result-title"></h2></header>
-        <p id="result-text"></p>
-        <div class="row">
-          <a id="report-link" class="btn ghost" href="/report" target="_blank" rel="noopener" hidden><svg class="ic"><use href="#i-doc"/></svg>Mission report</a>
-          <button type="button" class="btn ghost" data-reset>Start over</button>
-        </div>
-      </section>
-
-      <section class="card composer">
-        <header class="card-head"><h2 id="composer-title">Mission</h2><button id="reset" type="button" class="link">Start over</button></header>
-        <form id="mission-form" class="field">
-          <label for="mission-text">Describe the job</label>
-          <div class="input-row">
-            <input id="mission-text" type="text" placeholder="A hostile drone crashed in field A. Find it and move it to the disposal zone." autocomplete="off">
-            <button type="submit" id="mission-go" class="btn primary"><svg class="ic"><use href="#i-send"/></svg>Plan</button>
-          </div>
-        </form>
-        <form id="change-form" class="field" hidden>
-          <label for="change-text">Change the plan while it runs</label>
-          <div class="input-row">
-            <input id="change-text" type="text" placeholder="e.g. skip field A and search field B instead" autocomplete="off">
-            <button type="submit" id="change-go" class="btn">Send</button>
-          </div>
-        </form>
-      </section>
-
+    <!-- ================================================================ PLAN: every step -->
+    <section class="view view-plan" id="view-plan" role="tabpanel" aria-labelledby="nav-plan" hidden>
       <section class="card plan-card">
         <header class="card-head">
-          <h2>Plan</h2>
+          <h2>Every step of the plan</h2>
           <span id="plan-count" class="count">0 / 0</span>
-          <span id="plan-version" class="tag" hidden></span>
         </header>
-        <div class="progress" aria-hidden="true"><i id="plan-bar"></i></div>
+        <p class="card-sub">Each step is checked against what the robots are allowed to do before anything moves. Nothing runs until it is approved.</p>
         <div class="scroll plan-scroll" id="plan-scroll">
           <ol id="plan" class="steps"></ol>
           <div id="plan-empty" class="empty">
             <svg class="ic big"><use href="#i-hub"/></svg>
             <h3>No mission yet</h3>
-            <p>Describe a job above, or start from a ready-made scenario.</p>
-            <ul id="start-list" class="start-list"></ul>
+            <p>Start one from the Mission page: pick a use case or describe the job.</p>
           </div>
-          <details id="previous" hidden><summary>Previous plan</summary><ol id="previous-plan" class="steps old"></ol></details>
+          <details id="previous" hidden><summary>Previous version of the plan</summary><ol id="previous-plan" class="steps old"></ol></details>
         </div>
       </section>
-    </aside>
-  </main>
+    </section>
 
-  <!-- ============ bottom drawer ============ -->
-  <section class="drawer" id="drawer" aria-label="Details">
-    <div class="tabbar" role="tablist">
-      <button role="tab" class="tab" id="tab-log" data-tab="log" aria-controls="panel-log" aria-selected="true">Log <span class="badge" id="log-count">0</span></button>
-      <button role="tab" class="tab" id="tab-findings" data-tab="findings" aria-controls="panel-findings" aria-selected="false">Findings <span class="badge" id="findings-count">0</span></button>
-      <button role="tab" class="tab" id="tab-manual" data-tab="manual" aria-controls="panel-manual" aria-selected="false">Manual control</button>
-      <button role="tab" class="tab" id="tab-scenarios" data-tab="scenarios" aria-controls="panel-scenarios" aria-selected="false">Scenarios</button>
-      <span class="grow"></span>
-      <button id="drawer-toggle" class="icon-btn" type="button" title="Collapse or expand" aria-label="Collapse or expand the drawer" aria-expanded="true"><svg class="ic"><use href="#i-chevron"/></svg></button>
-    </div>
-
-    <div class="panel" id="panel-log" role="tabpanel">
-      <div class="scroll"><ul id="log" class="log"></ul><div id="log-empty" class="empty slim">Nothing yet. Messages from the AI and from you appear here.</div></div>
-    </div>
-
-    <div class="panel" id="panel-findings" role="tabpanel" hidden>
-      <div class="scroll">
-        <table id="findings">
-          <thead><tr><th>Id</th><th>x</th><th>y</th><th>What is it</th><th>Hazard</th><th>Authorized</th><th>Status</th><th>Photo</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <div id="findings-empty" class="empty slim">Nothing found yet.</div>
+    <!-- ================================================================ FLEET: robots, health, hands-on control -->
+    <section class="view view-fleet" id="view-fleet" role="tabpanel" aria-labelledby="nav-fleet" hidden>
+      <div class="fleet-grid">
+        <article class="unit rover" id="unit-rover">
+          <header><svg class="ic"><use href="#i-rover"/></svg><b>Rover</b><span class="kind">RoboMaster EP · camera + gripper</span><span id="rover-chip" class="chip" hidden></span></header>
+          <div class="nums"><span><em>x</em><b id="rover-x">&ndash;</b></span><span><em>y</em><b id="rover-y">&ndash;</b></span><span><em>heading</em><b id="rover-h">&ndash;</b></span></div>
+          <div class="foot"><span id="rover-source" class="muted">no position yet</span></div>
+          <div class="foot sub"><span id="rover-health" class="muted"></span></div>
+        </article>
+        <article class="unit scout" id="unit-scout">
+          <header><svg class="ic"><use href="#i-scout"/></svg><b>Scout</b><span class="kind">Crazyflie · Lighthouse positioning</span><span id="scout-chip" class="chip" hidden></span></header>
+          <div class="nums"><span><em>x</em><b id="scout-x">&ndash;</b></span><span><em>y</em><b id="scout-y">&ndash;</b></span><span><em>height</em><b id="scout-z">&ndash;</b></span></div>
+          <div class="foot"><div class="battery" id="battery" title="Battery"><i></i><i></i><i></i><i></i><i></i></div><span id="scout-batt" class="muted">&ndash;</span></div>
+          <div class="foot sub"><span id="scout-health" class="muted"></span></div>
+        </article>
+        <article class="unit target" id="unit-target">
+          <header><svg class="ic"><use href="#i-target"/></svg><b>Crashed drone</b><span class="kind">ground truth for the demo</span><span class="chip ghost">truth</span></header>
+          <div class="nums"><span><em>x</em><b id="target-x">&ndash;</b></span><span><em>y</em><b id="target-y">&ndash;</b></span></div>
+          <div class="foot"><span id="target-note" class="muted">second Crazyflie, read from Lighthouse</span></div>
+        </article>
+        <button class="cam overhead" id="overhead-card" type="button" aria-label="Overhead camera, click to enlarge" hidden>
+          <img id="overhead" alt="Overhead camera: the field from above" hidden>
+          <span id="overhead-empty" class="cam-empty"><svg class="ic"><use href="#i-camera"/></svg>No overhead frame yet</span>
+          <span class="cam-bar"><i class="rec"></i><span>Overhead camera</span><em id="overhead-info"></em></span>
+        </button>
       </div>
-    </div>
 
-    <div class="panel" id="panel-manual" role="tabpanel" hidden>
-      <div class="scroll">
+      <section class="card manual" id="panel-manual">
+        <header class="card-head"><h2>Hands-on control</h2><span id="calibration" class="warnchip" hidden></span></header>
         <p id="manual-hint" class="hint"></p>
         <div class="manual-grid">
           <div class="group">
@@ -254,6 +255,7 @@
               <button type="button" class="btn" id="d-goto">Go to x, y, z</button>
               <button type="button" class="btn" id="d-mark">Mark x, y</button>
             </div>
+            <p class="hint small">Tip: click the map on the Mission page to fill x and y.</p>
           </div>
           <div class="group">
             <h3><svg class="ic"><use href="#i-rover"/></svg>Rover</h3>
@@ -269,13 +271,6 @@
               <button type="button" class="btn" id="r-goto">Go to x, y</button>
             </div>
             <div class="btn-row">
-              <button type="button" class="btn" id="r-home" title="Click after placing the rover on the taped start cross">Rover is on the start cross</button>
-            </div>
-            <div class="btn-row">
-              <button type="button" class="btn" id="r-anchor-scout" title="The scout is landed right behind the rover (its pad in the start corner), nose pointing the way the rover faces. Click: the rover gets its true Lighthouse position and heading from it">Anchor: scout behind rover</button>
-              <button type="button" class="btn" id="r-anchor-target" title="Same, with the target Crazyflie placed right behind the rover">Anchor: target CF behind rover</button>
-            </div>
-            <div class="btn-row">
               <button type="button" class="btn" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"pick"}}'>Arm pick</button>
               <button type="button" class="btn" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"carry"}}'>Arm carry</button>
               <button type="button" class="btn" data-m='{"robot":"rover","action":"rover_arm","args":{"mode":"home"}}'>Arm home</button>
@@ -284,15 +279,38 @@
               <button type="button" class="btn" data-m='{"robot":"rover","action":"rover_snapshot","args":{}}'>Snapshot</button>
             </div>
           </div>
+          <div class="group">
+            <h3><svg class="ic"><use href="#i-target"/></svg>Rover position</h3>
+            <p class="hint small">The scout knows exactly where it is; the rover counts wheel turns. Line them up before a run.</p>
+            <div class="btn-row">
+              <button type="button" class="btn" id="r-anchor-scout" title="The scout is landed right behind the rover (its pad in the start corner), nose pointing the way the rover faces. Click: the rover gets its true Lighthouse position and heading from it">Anchor: scout behind rover</button>
+              <button type="button" class="btn" id="r-anchor-target" title="Same, with the target Crazyflie placed right behind the rover">Anchor: target behind rover</button>
+              <button type="button" class="btn" id="r-home" title="Click after placing the rover on the taped start cross">Rover is on the start cross</button>
+            </div>
+          </div>
         </div>
         <div id="manual-last" class="manual-last"></div>
-      </div>
-    </div>
+      </section>
+    </section>
 
-    <div class="panel" id="panel-scenarios" role="tabpanel" hidden>
-      <div class="scroll"><ul id="scenarios" class="scenarios"></ul></div>
-    </div>
-  </section>
+    <!-- ================================================================ EVIDENCE: what was found, and the record -->
+    <section class="view view-evidence" id="view-evidence" role="tabpanel" aria-labelledby="nav-evidence" hidden>
+      <section class="card finds-card">
+        <header class="card-head"><h2>What was found</h2><a id="report-link-ev" class="btn ghost" href="/report" target="_blank" rel="noopener" hidden><svg class="ic"><use href="#i-doc"/></svg>Mission report</a></header>
+        <div class="scroll">
+          <table id="findings">
+            <thead><tr><th>Photo</th><th>What is it</th><th>Hazard</th><th>Authorized</th><th>Status</th><th>Where (x, y)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div id="findings-empty" class="empty slim">Nothing found yet. Detections show up here with the rover's photo as evidence.</div>
+        </div>
+      </section>
+      <section class="card log-card">
+        <header class="card-head"><h2>Activity</h2><span class="badge" id="log-count">0</span></header>
+        <div class="scroll"><ul id="log" class="log"></ul><div id="log-empty" class="empty slim">Nothing yet. What the AI, the robots and you do appears here.</div></div>
+      </section>
+    </section>
+  </main>
 
   <div id="lightbox" class="lightbox" hidden role="dialog" aria-label="Rover camera"><img id="lightbox-img" alt="Rover camera, enlarged"><span class="lb-hint">Click or press Esc to close</span></div>
 

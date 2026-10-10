@@ -84,9 +84,9 @@ def page(server):
         browser.close()
 
 
-def tab(page, name):
-    page.click(f"[data-tab={name}]")
-    page.wait_for_selector(f"#panel-{name}", state="visible")
+def view(page, name):
+    page.click(f"[data-view={name}]")
+    page.wait_for_selector(f"#view-{name}", state="visible")
 
 
 def start_over(page, server):
@@ -95,6 +95,8 @@ def start_over(page, server):
         page.click("#reset")                                                                  # waits until the page has caught up
     server.wait(lambda s: s["mission"]["status"] == "idle", 8, "idle")
     page.wait_for_function("document.querySelectorAll('#plan li').length === 0", timeout=4000)
+    view(page, "mission")
+    page.wait_for_selector("#start-panel", state="visible", timeout=4000)
 
 
 def visible_in(page, selector, container):
@@ -141,19 +143,19 @@ def test_the_theme_toggle_flips_and_remembers(page):
     page.wait_for_timeout(450)
 
 
-def test_the_drawer_collapses_and_tabs_switch(page):
-    if page.locator("#drawer.closed").count():
-        page.click("#drawer-toggle")
-        page.wait_for_timeout(600)                                                          # let the height animation finish
-    open_h = page.locator("#drawer").bounding_box()["height"]
-    assert open_h > 150
-    page.click("#drawer-toggle")
-    page.wait_for_timeout(500)
-    assert page.locator("#drawer").bounding_box()["height"] < open_h / 2 and page.locator("#panel-log").is_hidden()
-    tab(page, "findings")                                                                   # clicking a tab reopens it
-    assert page.locator("#drawer.closed").count() == 0 and page.locator("#panel-log").is_hidden()
-    assert page.get_attribute("[data-tab=findings]", "aria-selected") == "true"
-    tab(page, "log")
+def test_the_sections_switch_and_the_page_remembers(page, server):
+    """Four sections, one visible at a time; the start screen sells the product with the use cases."""
+    assert page.locator("#start-panel").is_visible() and page.locator("#start-list .usecase").count() >= 5
+    assert "Send robots" in page.inner_text("#start-panel")
+    assert page.locator("#phases li").count() == 8                                          # the story, before any mission
+    for name in ("plan", "fleet", "evidence", "mission"):
+        view(page, name)
+        assert page.get_attribute(f"[data-view={name}]", "aria-selected") == "true"
+        assert sum(page.locator(f"#view-{v}").is_visible() for v in ("mission", "plan", "fleet", "evidence")) == 1
+    view(page, "fleet")
+    page.reload()
+    page.wait_for_selector("#view-fleet", state="visible", timeout=8000)                    # remembered
+    view(page, "mission")
 
 
 def test_the_keyboard_shortcuts(page):
@@ -167,13 +169,14 @@ def test_the_keyboard_shortcuts(page):
 def test_mentor_toggle_and_manual_control(page, server):
     page.check("#mentor")
     server.wait(lambda s: s["mentor_present"], 8, "mentor")
-    tab(page, "manual")
+    view(page, "fleet")
     page.click("text=Fwd 0.3 m")
     s = server.wait(lambda s: (s["manual"] or {}).get("status") in ("done", "failed"), 15, "manual drive")
     assert s["manual"]["action"] == "rover_drive" and s["manual"]["status"] == "done"
     page.wait_for_function("document.querySelector('#manual-last').textContent.includes('rover_drive')", timeout=5000)
     page.click("text=Snapshot")
     server.wait(lambda s: s["last_image_id"], 10, "snapshot")
+    view(page, "mission")
     page.wait_for_function("document.querySelector('#camera').src.includes('/images/img_')", timeout=5000)
     assert page.locator("#camera").evaluate("i => i.complete && i.naturalWidth > 0")
     box = page.locator("#map").bounding_box()
@@ -188,7 +191,7 @@ def test_mentor_toggle_and_manual_control(page, server):
 
 
 def test_a_scenario_runs_with_the_authorization_question_in_plain_sight(page, server):
-    page.locator("#start-list li", has_text="t3_recover_hostile").locator("button").click()
+    page.click("[data-scenario=t3_recover_hostile]")
     server.wait(lambda s: s["mission"]["status"] == "awaiting_approval", 15, "plan")
     page.wait_for_function("document.querySelectorAll('#plan li').length === 16", timeout=5000)
     assert page.locator("#source").inner_text().lower() == "scenario" and page.locator("#approve").is_enabled()
@@ -201,10 +204,14 @@ def test_a_scenario_runs_with_the_authorization_question_in_plain_sight(page, se
     box = page.locator("#question-card").bounding_box()
     assert box["y"] >= 0 and box["y"] + box["height"] <= VIEWPORT["height"], "the question must not need scrolling"
     assert page.locator("#approval-card").is_hidden()
+    assert page.inner_text("#phases li.active b") == "Authorize"                             # the story at a glance
+    assert "decision" in page.inner_text("#now-title").lower()
+    assert page.locator("#plan li.done").count() >= 5
+    view(page, "plan")
     page.wait_for_function("""() => { const a = document.querySelector('#plan li.current').getBoundingClientRect();
         const b = document.querySelector('#plan-scroll').getBoundingClientRect(); return a.top >= b.top - 1 && a.bottom <= b.bottom + 1; }""",
-                           timeout=4000)                                                   # the working step stays in view
-    assert page.locator("#plan li.done").count() >= 5
+                           timeout=4000)                                                   # the working step is in view
+    view(page, "mission")
     page.click("#answer-yes")
     s = server.wait(lambda s: s["mission"]["status"] in ("done", "failed"), 60, "mission end")
     assert s["mission"]["status"] == "done", s["mission"]["error"]
@@ -213,32 +220,22 @@ def test_a_scenario_runs_with_the_authorization_question_in_plain_sight(page, se
     assert "complete" in page.inner_text("#result-title").lower() and page.locator("#report-link").is_visible()
     assert page.locator("#plan li.done").count() == 16 and page.inner_text("#plan-count").strip() == "16 / 16"
     assert page.locator("#plan-bar").evaluate("e => e.style.width") == "100%"
-    tab(page, "findings")
+    assert page.locator("#phases li").count() == page.locator("#phases li.done").count()   # every phase ticked off
+    assert page.locator("#map-dynamic .finding.recovered").count() == 1                      # the green X
+    assert "complete" in page.inner_text("#ticker-text").lower()
+    page.click("#to-evidence")
+    page.wait_for_selector("#view-evidence", state="visible")
     row = page.inner_text("#findings tbody tr").lower()
     assert "hostile drone" in row and "recovered" in row and "hazardous" in row
-    assert page.locator("#findings tbody img").count() == 1 and page.get_attribute("[data-tab=findings] .badge", "class")
-    assert page.locator("#map-dynamic .finding.recovered").count() == 1                      # the green X
-    tab(page, "log")
-    assert page.locator("#log li").count() >= 8 and "complete" in page.inner_text("#ticker-text").lower()
-
-
-def test_the_findings_card_beside_the_map_shows_the_photo_and_status(page, server):
-    if page.locator("#drawer.closed").count() == 0:                                         # a short column hides this card,
-        page.click("#drawer-toggle")                                                        # so give it the room first
-        page.wait_for_timeout(600)
-    assert page.locator("#side-finds").is_visible(), "the card should fit once the drawer is collapsed"
-    card = page.inner_text("#side-finds").lower()
-    assert "hostile drone" in card and "recovered" in card and "hazardous" in card
-    assert page.locator("#find-cards img").count() == 1 and page.locator("#find-empty").is_hidden()
-    page.click("#to-findings")
-    page.wait_for_selector("#panel-findings", state="visible")
-    tab(page, "log")
+    assert page.locator("#findings tbody img").count() == 1 and page.inner_text("#findings-count") == "1"
+    assert page.locator("#log li").count() >= 8 and page.locator("#report-link-ev").is_visible()
+    view(page, "mission")
 
 
 def test_the_search_shows_its_pattern_and_the_scouts_trail(page, server):
     start_over(page, server)                                                                   # also proves old rows are gone
-    assert page.locator("#plan-empty").is_visible()
-    page.locator("#start-list li", has_text="t4_search_field_a").locator("button").click()
+    assert page.locator("#start-panel").is_visible() and page.locator("#now-card").is_hidden()
+    page.click("[data-scenario=t4_search_field_a]")
     server.wait(lambda s: s["mission"]["status"] == "awaiting_approval", 15, "t4 plan")
     page.click("#approve")
     page.wait_for_selector("#map-dynamic polyline.trail", state="attached", timeout=30000)
@@ -251,8 +248,9 @@ def test_the_search_shows_its_pattern_and_the_scouts_trail(page, server):
 def test_the_robots_glide_instead_of_jumping(page, server):
     """The marker moves through intermediate positions between polls (a CSS transition), it does not teleport."""
     start_over(page, server)
-    tab(page, "manual")
+    view(page, "fleet")
     page.click("#r-goto")
+    view(page, "mission")                                                                   # watch it on the map
     seen = set()
     t0 = time.time()
     while time.time() - t0 < 6:
@@ -274,7 +272,9 @@ def test_typed_missions_changes_errors_and_stop(page, server):
     page.fill("#change-text", "also check field A")
     page.click("#change-go")
     page.wait_for_function("document.querySelector('#change-text').value === ''", timeout=8000)
+    view(page, "plan")
     page.wait_for_selector("#previous", state="visible", timeout=5000)                       # the old plan stays visible
+    view(page, "mission")
     assert page.locator("#mission-form").is_hidden() and page.locator("#mission-text").is_disabled()   # one mission at a time
     assert page.locator("#change-form").is_visible()
     # the form is hidden while a mission is live, so provoke the server's 409 by submitting it programmatically

@@ -141,7 +141,7 @@ The Team Plan specifies an HTTP service layer. Today the repo contains the *orch
 | Planned (Team Plan) | State | Owner |
 | --- | --- | --- |
 | Rover server `:8000` with `/drive /speed /grip /arm /snapshot /stop /pose` | 🟡 `robot_server.py` not in repo; the endpoints below are **inferred from callers** | Rover squad |
-| Drone server `:8001` with `/takeoff /goto /scan /land /pose` | 🟡 Not in repo. `fleet.py` drives Crazyflies **in-process with cflib** instead of over HTTP | Drone squad |
+| Drone server `:8001` with `/takeoff /goto /scan /land /dock /pose /health` | ✅ `drone_server.py`: flown on the real scout; geofence (`CAGE`), battery check, `/land` preempts any flight; `/pose?cf=target` needs `TARGET_URI` | Drone squad |
 | AI manager `:8002` with `/mission /approve /stop /state` | ✅ in `manager/` (on mocks; not yet on real robots). `fleet.py::run` stays the one-shot reference | AI manager squad |
 | Human **approve / change / stop** gate | ✅ in `manager/` (plan → Approve → run, `409` on stale approvals, Stop from any state) | AI manager squad |
 | Re-plan on failure, live plan change ("skip the left side…") | ✅ in `manager/` (supervisor checkpoints + `/change`; the live change needs a Gemini key) | AI manager squad |

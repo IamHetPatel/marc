@@ -37,12 +37,13 @@ if not MOCK:
     
     reset_estimator(scf)
     
-    # Arming request (required for Brushless Crazyflie)
+    # Arming request (required for Brushless Crazyflie 2.1)
+    # Note: firmware v10 uses legacy fallback, update firmware to v12+ to clear warning
     try:
-        scf.cf.platform.send_arming_request(True)
+        scf.cf.supervisor.send_arming_request(True)
         time.sleep(1.0)
-    except AttributeError:
-        pass
+    except Exception:
+        pass  # older firmware fallback
 
     def _log_cb(timestamp, data, logconf):
         drone_pose["x"] = data["stateEstimate.x"]

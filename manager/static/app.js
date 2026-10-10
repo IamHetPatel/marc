@@ -84,12 +84,12 @@
     rover_goto: "Drive to", rover_search: "Look around", rover_approach: "Close in with the camera",
     rover_inspect: "Inspect it", rover_grip: "Gripper", rover_check_grip: "Check the grip", rover_arm: "Arm",
     rover_drive: "Drive", rover_snapshot: "Take a photo", request_authorization: "Ask the operator",
-    ask_human: "Ask the operator", report: "Report back"
+    ask_human: "Ask the operator", report: "Report back", camera_locate: "Find it from above"
   };
   var SOURCE = { ai: "AI plan", fallback: "built-in plan (no AI)", scenario: "scenario", manual: "submitted plan" };
   var POSE_SOURCE = {
     "docked_drone": "Position from the docked scout", "start_cross+odometry": "Dead reckoning from the start cross",
-    "fix+odometry": "Last fix plus wheel odometry"
+    "fix+odometry": "Last fix plus wheel odometry", "overhead_camera": "Seen by the overhead camera"
   };
   function placeName(t) {
     if (t == null) return "";
@@ -228,7 +228,7 @@
     if (!S.s) return;
     try {
       renderBar(); renderAttention(); renderComposer(); renderPlan(); renderFleet(); renderTicker();
-      renderCamera(); renderFindings(); renderSideFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
+      renderCamera(); renderOverhead(); renderFindings(); renderSideFindings(); renderLog(); renderManual(); renderScenarios(); renderMap();
     } catch (e) {
       banner("Dashboard error: " + e.message + " (STOP still works)", "", true);
       if (window.console) console.error(e);
@@ -419,6 +419,25 @@
     $("camera-empty").hidden = !!id;
     img.hidden = !id;
     if (id && S.cache.cam !== id) { S.cache.cam = id; img.src = "/images/" + encodeURIComponent(id) + ".jpg"; }
+  }
+
+  /* The overhead webcam frame is not a stored image: it is fetched live, at most once a second, only while the camera
+     is installed and a frame has loaded (no request pile-up on a slow link). */
+  var OVERHEAD_PERIOD_MS = 1000;
+  function renderOverhead() {
+    var o = S.s.robots.overhead, card = $("overhead-card");
+    card.hidden = !o;
+    if (!o) return;
+    var tags = o.floor_tags_seen + "/" + o.floor_tags_total + " tags";
+    setText($("overhead-info"), !o.online ? "offline" : !o.calibrated ? tags + " · uncalibrated"
+      : tags + (o.rover_seen ? " · rover" : " · no rover"));
+    var img = $("overhead"), now = Date.now();
+    if (!o.online || S.cache.ovBusy || now - (S.cache.ovT || 0) < OVERHEAD_PERIOD_MS) return;
+    S.cache.ovBusy = true; S.cache.ovT = now;
+    var next = new Image();
+    next.onload = function () { img.src = next.src; img.hidden = false; $("overhead-empty").hidden = true; S.cache.ovBusy = false; };
+    next.onerror = function () { S.cache.ovBusy = false; };
+    next.src = "/overhead.jpg?t=" + now;
   }
 
   /* ---- findings table ---- */
@@ -763,6 +782,7 @@
       store("fp-theme", next);
     });
     $("camera-card").addEventListener("click", function () { if (S.s && S.s.last_image_id) openLightbox($("camera").src); });
+    $("overhead-card").addEventListener("click", function () { if (!$("overhead").hidden) openLightbox($("overhead").src); });
     $("lightbox").addEventListener("click", function () { $("lightbox").hidden = true; });
     document.addEventListener("click", function (ev) { if (ev.target.getAttribute && ev.target.getAttribute("data-zoom")) openLightbox(ev.target.src); });
     document.addEventListener("keydown", function (ev) {

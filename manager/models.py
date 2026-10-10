@@ -70,6 +70,19 @@ class Camera(BaseModel):
     deadband_px: int = 40
 
 
+class Overhead(BaseModel):
+    """The fixed overhead webcam (manager/overhead.py). Floor tags are ArUco markers taped flat at known Lighthouse
+    positions; they give the pixel -> metre homography. The rover carries one more tag on its top plate."""
+    dictionary: str = "DICT_4X4_50"
+    camera_height_m: float = 2.5             # lens above the floor; corrects parallax for things above the floor
+    floor_tags: dict = Field(default_factory=dict)      # tag id (str) -> [x, y] of the tag centre, metres
+    rover_tag_id: int = 10
+    rover_tag_height_m: float = 0.3          # rover tag above the floor
+    rover_tag_offset_m: list = Field(default_factory=lambda: [0.0, 0.0])  # tag centre in the rover body frame
+    rover_tag_yaw_offset_deg: float = 0.0    # rover heading minus the tag's "up" direction
+    max_age_s: float = 0.5                   # an older rover sighting is not used as a position fix
+
+
 class MockObject(BaseModel):
     label: str
     kind: str = "unknown"            # own_drone | hostile_drone | decoy | unknown
@@ -90,6 +103,7 @@ class Arena(BaseModel):
     dock_z: float = 0.27
     zones: dict = Field(default_factory=dict)       # name -> Rect
     camera: Camera = Camera()
+    overhead: Overhead = Overhead()
     mock_objects: list = Field(default_factory=list)
 
     def zone(self, name: str) -> Optional[Rect]:
@@ -111,6 +125,7 @@ def load_arena(path: Optional[str] = None) -> Arena:
         zones={n: Rect(x0=z["rect"][0], y0=z["rect"][1], x1=z["rect"][2], y1=z["rect"][3])
                for n, z in raw.get("zones", {}).items()},
         camera=Camera(**raw.get("camera", {})),
+        overhead=Overhead(**{k: v for k, v in raw.get("overhead", {}).items() if not k.startswith("_")}),
         mock_objects=[MockObject(**o) for o in raw.get("mock_objects", [])],
     )
 

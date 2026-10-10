@@ -13,6 +13,17 @@
     "test_zone": {"rect": [0.3, 0.3, 3.7, 2.7]}
   },
   "camera": {"width": 640, "height": 360, "fov_deg": 70.0, "grip_line_row": 300, "deadband_px": 40},
+  "overhead": {
+    "_note": "PLACEHOLDER. Tape ArUco tags 0-3 just OUTSIDE the drivable area (the rover must never cover one; more than 4 tags is fine and survives occlusion) (DICT_4X4_50, print with: python -m manager.overhead tags) flat on the floor and enter their measured centres. Tag 10 goes on the rover's top plate, its top edge towards the rover's front.",
+    "dictionary": "DICT_4X4_50",
+    "camera_height_m": 2.5,
+    "floor_tags": {"0": [-0.1, -0.1], "1": [4.1, -0.1], "2": [4.1, 3.1], "3": [-0.1, 3.1]},
+    "rover_tag_id": 10,
+    "rover_tag_height_m": 0.3,
+    "rover_tag_offset_m": [0.0, 0.0],
+    "rover_tag_yaw_offset_deg": 0.0,
+    "max_age_s": 0.5
+  },
   "mock_objects": [
     {"label": "crashed drone", "kind": "hostile_drone", "x": 2.4, "y": 1.1, "height": 0.05, "grippable": true, "color": "#c0392b"}
   ]

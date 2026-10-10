@@ -191,6 +191,7 @@ a { color: inherit; }
 .cam-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 7px; padding: 14px 9px 6px; color: #e8e5de;
   font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; background: linear-gradient(transparent, rgba(0, 0, 0, .72)); }
 .cam-bar em { margin-left: auto; font-style: normal; opacity: .75; }
+#overhead { object-fit: contain; background: #16181a; }   /* the whole field, never cropped: the tags are the point */
 .rec { width: 7px; height: 7px; border-radius: 50%; background: #e5493e; animation: blink 1.6s ease-in-out infinite; }
 
 /* map drawing (SVG) */

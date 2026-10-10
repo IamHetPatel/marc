@@ -92,9 +92,48 @@ class StillImage:
         pass
 
 
+class HttpStill:
+    """A webcam on another laptop, served by camera/stream_webcam.py: fetches its newest JPEG a few times a second.
+    Every fetch is a fresh request, so a Wi-Fi drop heals by itself; a frame older than STALE_FRAME_S is not handed
+    out, so a dead link shows as "offline" instead of a frozen picture."""
+
+    def __init__(self, url: str, period_s: float = 0.2):
+        self.url = url if url.lower().endswith((".jpg", ".jpeg")) else url.rstrip("/") + "/snapshot.jpg"
+        self.period_s = period_s
+        self._frame, self._t, self._lock, self._halt = None, 0.0, threading.Lock(), threading.Event()
+        threading.Thread(target=self._run, daemon=True, name="overhead-http").start()
+
+    def _run(self):
+        import urllib.request
+        said = None
+        while not self._halt.wait(self.period_s):
+            try:
+                with urllib.request.urlopen(self.url, timeout=3.0) as r:
+                    frame = cv2.imdecode(np.frombuffer(r.read(), np.uint8), cv2.IMREAD_COLOR)
+            except (OSError, ValueError) as e:
+                if str(e) != said:                     # say each new reason once
+                    log.warning("overhead camera %s: %s", self.url, e)
+                    said = str(e)
+                continue
+            if frame is not None:
+                said = None
+                with self._lock:
+                    self._frame, self._t = frame, time.monotonic()
+
+    def read(self) -> Optional[np.ndarray]:
+        with self._lock:
+            return self._frame if time.monotonic() - self._t < STALE_FRAME_S else None
+
+    def close(self):
+        self._halt.set()
+
+
 def open_source(spec: str, width: int = 3840, height: int = 2160):
-    if Path(spec).suffix.lower() in (".jpg", ".jpeg", ".png"):
+    """A webcam index or /dev/videoN, an http:// camera/stream_webcam.py, an rtsp:// stream, or a still image."""
+    if Path(spec).suffix.lower() in (".jpg", ".jpeg", ".png") and not spec.startswith(("http://", "https://")):
         return StillImage(spec)
+    if spec.startswith(("http://", "https://")):
+        return HttpStill(spec)
     return CvCapture(spec, width, height)
 
 

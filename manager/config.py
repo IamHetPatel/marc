@@ -56,6 +56,12 @@ class Config:
     detector_miss_p: float = 0.05
     separation_m: float = 0.5            # a low drone must stay this far (x/y) from where the rover is going
     scenario: str = ""                   # SCENARIO=<name>: load this scenario at server start
+    # --- overhead webcam backup (manager/overhead.py): OVERHEAD_CAM=0 | /dev/video0 | rtsp://... | frame.jpg
+    overhead_cam: str = ""               # empty = no overhead camera
+    overhead_width: int = 3840
+    overhead_height: int = 2160
+    overhead_target: str = "crashed drone"   # what drone_search looks for when the camera is its detector
+    detector: str = "auto"               # auto (overhead if camera + Gemini, else sim) | sim | overhead
     # --- mock world
     mock_time_scale: float = 1.0         # >1 runs the simulated clock faster than wall time
     mock_fail: dict = field(default_factory=dict)
@@ -82,6 +88,11 @@ class Config:
             detector_miss_p=_float("DETECTOR_MISS_P", cls.detector_miss_p),
             separation_m=_float("SEPARATION_M", cls.separation_m),
             scenario=os.getenv("SCENARIO", cls.scenario),
+            overhead_cam=os.getenv("OVERHEAD_CAM", cls.overhead_cam),
+            overhead_width=int(os.getenv("OVERHEAD_WIDTH", cls.overhead_width)),
+            overhead_height=int(os.getenv("OVERHEAD_HEIGHT", cls.overhead_height)),
+            overhead_target=os.getenv("OVERHEAD_TARGET", cls.overhead_target),
+            detector=os.getenv("DETECTOR", cls.detector),
             mission_timeout_s=_float("MISSION_TIMEOUT_S", cls.mission_timeout_s),
             rover_speed_y_sign=_float("ROVER_SPEED_Y_SIGN", cls.rover_speed_y_sign),
             rover_drive_y_sign=_float("ROVER_DRIVE_Y_SIGN", cls.rover_drive_y_sign),

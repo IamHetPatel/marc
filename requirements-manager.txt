@@ -7,3 +7,4 @@ pytest
 httpx
 pillow
 pyyaml
+opencv-python-headless>=4.8       # overhead webcam (OVERHEAD_CAM); the manager runs without it

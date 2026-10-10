@@ -236,6 +236,8 @@ class Controller:
     def shutdown(self):
         self.monitor.halt()
         self._cancel.set()
+        if self.base_ctx.overhead is not None:
+            self.base_ctx.overhead.halt()
 
     # ------------------------------------------------------------ planning
     def _new_epoch(self):
@@ -386,6 +388,8 @@ class Monitor(threading.Thread):
                 store.merge_robot("target", online=True, pose={k: t.get(k) for k in ("x", "y", "z")})
         except RobotError:
             store.merge_robot("target", online=False)
+        if ctx.overhead is not None:                # status only; a dead webcam is not a reason to stop a mission
+            store.merge_robot("overhead", **ctx.overhead.status())
         for name in ("rover", "drone"):
             rtt = getattr(getattr(ctx, name), "rtt_ms", None)
             if rtt is not None:

@@ -20,6 +20,7 @@
 | **M6** triage, authorization gate, disposal, report | ✅ | `tools.py` (`_authorization_gate`), `GET /report` |
 | **M7** simulated detector, `drone_search` | ✅ | `detector.py` |
 | **M8** planner/supervisor on the farmland story | ✅ unit-tested with scripted LLMs; **not run against live Gemini** | `planner.py`, `supervisor.py`, `fallback_plans.py` |
+| **O1** backup: overhead 4K webcam (ArUco calibration, rover tag → pose fix, Gemini `camera_locate`, overhead detector for `drone_search`, dashboard card, `overhead_fetch` scenario, `OVERHEAD_CAM=mock`) | ✅ on synthetic frames; real capture path opened on a laptop webcam; **not run on the floor** | `overhead.py`, `overhead_mock.py` |
 | R1, D1, F1 | not ours / not started | |
 
 ~300 tests on mocks (`pytest`), plus opt-in `pytest -m ui` (real browser) and `pytest -m live` (real Gemini). Nothing here has touched a real robot or the real Gemini API.

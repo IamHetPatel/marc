@@ -96,7 +96,9 @@ def test_every_shipped_scenario_is_valid(name, make_ctrl):
 
 @pytest.mark.parametrize("name", SCENARIOS)
 def test_every_shipped_scenario_runs_to_the_end_on_mocks(name, make_ctrl):
-    c = make_ctrl()
+    sc = load_scenario(name)
+    needs_overhead = any(d.action == "camera_locate" for d in sc.plan)
+    c = make_ctrl(overhead_cam="mock" if needs_overhead else "")
     c.load_scenario(name)
     assert c.store.mission.source == "scenario" or not load_scenario(name).plan
     wait_status(c, "awaiting_approval")

@@ -76,7 +76,7 @@ def test_health_is_polled_trimmed_and_never_trips_the_watchdog(cfg):
     mon = Monitor(ctrl)
     mon.poll()
     assert ctrl.store.robots["rover"]["health"] == {"battery_pct": None, "camera": "mock", "last": None,
-                                                    "mock": True, "video": False}
+                                                    "mock": True, "video": False, "error": None}
 
     def dead():
         raise RobotError("no /health")

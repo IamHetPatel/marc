@@ -1,5 +1,6 @@
 # Tier T4: the scout really searches field A with its (simulated) downward camera instead of knowing the spot.
 name: t4_search_field_a
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "Scout searches field A, rover goes to what it finds"
 mission: "A hostile drone crashed somewhere in field A. Search the field, then drive the rover to whatever the scout finds."
 targets:

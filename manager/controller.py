@@ -104,6 +104,10 @@ class Controller:
         """Register the scenario's targets (detector, and the mock world if there is one), then submit its scripted
         plan, or start an AI mission from its sentence. Raises scenarios.UnknownScenario."""
         sc = load_scenario(name)
+        kind = self.base_ctx.arena.kind
+        if sc.arena and sc.arena != kind:
+            raise Conflict(f"scenario {name!r} is for the {sc.arena} field, but the mothership runs the {kind} field "
+                           f"({'start it with ARENA=manager/arena.floor.json' if sc.arena == 'floor' else 'use demo mode'})")
         with self._lock:
             if self.store.status not in IDLE_STATES:
                 raise Conflict(f"a mission is already {self.store.status}; stop or reset it first")
@@ -207,6 +211,12 @@ class Controller:
                           for s in st["plan"]],
                 "messages": st["messages"], "metrics": st["metrics"]}
 
+    def build_report_html(self) -> str:
+        from .report_html import render
+        report = self.build_report()
+        ids = {f.get("image_id") for f in report["findings"]} - {None}
+        return render(report, {i: self.store.get_image(i) for i in ids})
+
     def _write_report(self):
         """runs/<mission_id>/report.yaml. An older report with the same id (a previous server run) is kept."""
         if self.store.mission.id is None:
@@ -221,6 +231,9 @@ class Controller:
             tmp = folder / "report.yaml.tmp"                # readers never see a half-written report
             tmp.write_text(yaml.safe_dump(report, sort_keys=False, allow_unicode=True))
             tmp.replace(path)
+            html_tmp = folder / "report.html.tmp"
+            html_tmp.write_text(self.build_report_html())
+            html_tmp.replace(folder / "report.html")
             self.store.event("report", path=str(path))
         except (OSError, yaml.YAMLError) as e:
             log.warning("could not write the mission report: %s", e)

@@ -1,5 +1,6 @@
 # Not every flagged object is a drone. The camera must notice, and the mission ends without touching it.
 name: decoy_bottle
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "A false alarm: the scout flags a plastic bottle"
 mission: "Something crashed in field B. Find it, check it, and recover it if it is a drone."
 targets:

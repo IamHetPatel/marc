@@ -1,6 +1,7 @@
 # Tier T2: the scout marks the crash site, the rover drives to it and takes a photo. No AI involved.
 # If that is a problem, add a drone_goto back to the launch pad before it.
 name: t2_mark_and_drive
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "Scout marks the crash site, rover drives there"
 mission: "A hostile drone crashed at about (2.4, 1.1). Mark the spot with the scout and drive the rover there."
 targets:

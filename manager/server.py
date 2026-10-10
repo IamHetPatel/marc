@@ -18,7 +18,7 @@ from typing import Optional
 import requests
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -127,7 +127,7 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
 
     @app.get("/scenarios")
     def scenarios():
-        return list_scenarios()
+        return list_scenarios(ctrl().base_ctx.arena.kind)
 
     @app.post("/scenarios/{name}/load")
     def load(name: str):
@@ -149,6 +149,13 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         if ctrl().store.mission.id is None:
             raise HTTPException(status_code=404, detail="no mission yet")
         return ctrl().build_report()
+
+    @app.get("/report.html", response_class=HTMLResponse)
+    def report_html():
+        """The same report laid out for people, photos embedded; the browser's print dialog saves it as a PDF."""
+        if ctrl().store.mission.id is None:
+            raise HTTPException(status_code=404, detail="no mission yet")
+        return HTMLResponse(ctrl().build_report_html())
 
     @app.get("/arena")
     def arena():

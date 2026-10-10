@@ -1,6 +1,7 @@
 # Backup plan: no scout flight. The fixed overhead webcam finds the crashed drone, the rover fetches it.
 # Needs OVERHEAD_CAM (a webcam index, or "mock" with the mock robots). Floor tags must be in view (calibrated).
 name: overhead_fetch
+arena: mock          # coordinates of the simulated 4 x 3 m world (manager/arena.json)
 title: "Overhead camera finds it, rover fetches it"
 mission: "A hostile drone crashed in the field. Find it with the overhead camera and move it to the disposal zone if it is safe to handle."
 targets:

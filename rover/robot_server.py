@@ -4,8 +4,13 @@ The mothership (manager/adapters/rover_http.py), curl and the browser teleop pag
 this one process, because the EP takes only one SDK controller at a time. It speaks DJI's plaintext SDK over
 TCP like control1.py does, so it needs no `robomaster` package and runs on macOS or Linux.
 
-    ROBOT_HOST=<ep-ip> python rover/robot_server.py      # EP in STA mode, on the team hotspot
+    python rover/robot_server.py                          # EP in STA mode on the hotspot: found automatically
+    ROBOT_HOST=<ep-ip> python rover/robot_server.py       # or name it (skips the search)
+    python rover/robot_server.py --find                   # just list the EPs on this network
     MOCK=1 python rover/robot_server.py                   # fake EP, no hardware
+
+The server starts even if the EP is not on yet, and reconnects by itself after a battery swap or a Wi-Fi drop; while
+the EP is away every call answers at once with the reason (HTTP 503, /health says why).
     curl "http://localhost:8000/drive?x=0.3"
 
 API conventions (the contract in docs/mothership-plan.md §3.1): metres and degrees, body frame x forward,
@@ -22,11 +27,13 @@ import io
 import json
 import math
 import os
+import re
 import signal
 import socket
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
@@ -34,9 +41,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image, ImageDraw
 
-HOST = os.getenv("ROBOT_HOST", "192.168.2.1")
+HOST = os.getenv("ROBOT_HOST", "auto")      # "auto": find the EP on this network (and again if its IP changes)
 SDK_PORT = 40923
 VIDEO_PORT = 40921
+EVENT_PORT = 40925
+BROADCAST_PORT = 40926
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("PORT", "8000"))
 MOCK = os.getenv("MOCK") == "1"
@@ -75,25 +84,46 @@ class BadRequest(Exception):
 
 class SdkLink:
     """One TCP connection to the EP's plaintext SDK (port 40923). The lock makes every command exactly one
-    request/reply, so /stop and the watchdog can interleave with a /drive that is waiting for the robot."""
+    request/reply, so /stop and the watchdog can interleave with a /drive that is waiting for the robot.
+
+    A background thread keeps the link up: it dials (and with host "auto" first finds the EP on this network), and
+    redials whenever a command fails. Requests never wait for that: while the EP is away they fail at once with the
+    reason, so a dead battery or a Wi-Fi drop shows up on the dashboard instead of stalling every call."""
 
     INIT = ("robot mode free", "stream on")
+    RETRY_S = 1.0
 
     def __init__(self, host: str, port: int = SDK_PORT, timeout: float = 5.0):
-        self.host, self.port, self.timeout = host, port, timeout
-        self.label = f"{host}:{port}"
+        self.auto = host == "auto"
+        self.address = None if self.auto else host
+        self.port, self.timeout = port, timeout
+        self.error = "not connected yet"
         self._lock = threading.Lock()
         self._sock = None
+        self._halt = threading.Event()
 
-    def open(self):
-        with self._lock:
-            self._connect()
+    @property
+    def label(self) -> str:
+        return f"{self.address or 'auto'}:{self.port}"
+
+    @property
+    def connected(self) -> bool:
+        return self._sock is not None
+
+    def open(self, wait_s: float = 15.0) -> bool:
+        """Start keeping the link up; wait up to wait_s for the first connection. False if the EP is not there yet."""
+        threading.Thread(target=self._keep_connected, daemon=True, name="sdk-link").start()
+        t_end = time.monotonic() + wait_s
+        while not self.connected and time.monotonic() < t_end:
+            time.sleep(0.1)
+        return self.connected
 
     def close(self):
+        self._halt.set()
         with self._lock:
             if self._sock is not None:
                 try:
-                    self._exchange("quit")
+                    self._exchange(self._sock, "quit")
                 except OSError:
                     pass
                 self._drop()
@@ -101,29 +131,69 @@ class SdkLink:
     def cmd(self, command: str) -> str:
         with self._lock:
             if self._sock is None:
-                self._connect()
+                raise ConnectionError(f"EP not connected: {self.error}")
             try:
-                return self._exchange(command)
-            except OSError:
+                return self._exchange(self._sock, command)
+            except OSError as e:
+                self.error = str(e) or type(e).__name__
                 self._drop()
                 raise
 
-    def _connect(self):
-        self._sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-        self._sock.settimeout(self.timeout)
+    def _keep_connected(self):
+        said = None
+        while not self._halt.is_set():
+            if self._sock is None:
+                try:
+                    sock = self._dial()
+                except OSError as e:
+                    self.error = str(e) or type(e).__name__
+                    if self.error != said:                       # say each new reason once, not every second
+                        print(f"EP not connected: {self.error}")
+                        said = self.error
+                else:
+                    with self._lock:
+                        self._sock, self.error = sock, None
+                    print(f"EP connected at {self.label}")
+                    said = None
+            self._halt.wait(self.RETRY_S)
+
+    def _dial(self) -> socket.socket:
+        """A fresh, handshaken socket. With host "auto": the last address first, else whatever EP is on the network."""
+        candidates = [self.address] if self.address else []
+        if self.auto:
+            candidates += [ip for ip in find_eps() if ip != self.address]
+            if not candidates:
+                raise ConnectionError("no EP found on this network (is it on, in router mode, on this hotspot?)")
+        last = None
+        for address in candidates:
+            try:
+                sock = self._handshake(address)
+            except OSError as e:
+                last = e
+                continue
+            self.address = address
+            return sock
+        raise last
+
+    def _handshake(self, address: str) -> socket.socket:
+        sock = socket.create_connection((address, self.port), timeout=min(self.timeout, 3.0))
+        sock.settimeout(self.timeout)
         try:
-            reply = self._exchange("command")
-        except socket.timeout:
-            self._drop()
-            raise ConnectionError("the SDK port is open but the EP ignored 'command'. Another controller probably "
-                                  "holds it: force-quit the RoboMaster app / control1.py, or restart the EP") from None
-        if not reply.startswith("ok"):
-            self._drop()
-            raise ConnectionError(f"EP refused SDK mode: {reply!r}")
-        for command in self.INIT:
-            reply = self._exchange(command)
+            reply = self._exchange(sock, "command")
             if not reply.startswith("ok"):
-                print(f"warning: {command!r} -> {reply!r}")
+                raise ConnectionError(f"EP at {address} refused SDK mode: {reply!r}")
+            for command in self.INIT:
+                reply = self._exchange(sock, command)
+                if not reply.startswith("ok"):
+                    print(f"warning: {command!r} -> {reply!r}")
+        except socket.timeout:
+            sock.close()
+            raise ConnectionError(f"the SDK port at {address} is open but the EP ignored 'command'. Another controller "
+                                  "probably holds it: force-quit the RoboMaster app / control1.py, or restart the EP") from None
+        except OSError:
+            sock.close()
+            raise
+        return sock
 
     def _drop(self):
         try:
@@ -132,35 +202,66 @@ class SdkLink:
             pass
         self._sock = None
 
-    def _exchange(self, command: str) -> str:
-        self._drain()
-        self._sock.sendall(command.encode("utf-8") + b";")
-        data = self._sock.recv(1024)
+    def _exchange(self, sock: socket.socket, command: str) -> str:
+        self._drain(sock)
+        sock.sendall(command.encode("utf-8") + b";")
+        data = sock.recv(1024)
         if not data:
             raise ConnectionError("EP closed the connection")
-        self._sock.settimeout(0.2)              # replies end with ';', wait briefly if one arrived split
+        sock.settimeout(0.2)                    # replies end with ';', wait briefly if one arrived split
         try:
             while not data.rstrip().endswith(b";"):
-                more = self._sock.recv(1024)
+                more = sock.recv(1024)
                 if not more:
                     break
                 data += more
         except socket.timeout:
             pass
         finally:
-            self._sock.settimeout(self.timeout)
+            sock.settimeout(self.timeout)
         return data.decode("utf-8", "replace").strip().rstrip(";").strip()
 
-    def _drain(self):
+    def _drain(self, sock: socket.socket):
         """Drop a late reply to an earlier command that timed out, so replies stay in step with commands."""
-        self._sock.setblocking(False)
+        sock.setblocking(False)
         try:
-            while self._sock.recv(4096):
+            while sock.recv(4096):
                 pass
         except (BlockingIOError, InterruptedError):
             pass
         finally:
-            self._sock.settimeout(self.timeout)
+            sock.settimeout(self.timeout)
+
+
+def find_eps(listen_s: float = 1.5) -> list:
+    """RoboMaster EPs on this laptop's network. In router mode the EP broadcasts "robot ip <addr>" on UDP 40926; when
+    that does not arrive (many hotspots drop broadcasts) the local /24 is scanned for its two SDK ports (40923
+    commands, 40925 events). Only TCP connects, nothing is sent, so a running controller is not disturbed."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("", BROADCAST_PORT))
+            s.settimeout(listen_s)
+            data, (sender, _) = s.recvfrom(1024)
+            m = re.search(rb"(\d+\.\d+\.\d+\.\d+)", data)
+            return [m.group(1).decode() if m else sender]
+    except OSError:
+        pass
+    me = _lan_ip()
+    if me == "localhost":
+        return []
+    prefix = me.rsplit(".", 1)[0]
+
+    def is_ep(host: str) -> bool:
+        for port in (SDK_PORT, EVENT_PORT):
+            try:
+                socket.create_connection((host, port), timeout=0.4).close()
+            except OSError:
+                return False
+        return True
+    hosts = [f"{prefix}.{i}" for i in range(1, 255) if f"{prefix}.{i}" != me]
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        return [h for h, ok in zip(hosts, pool.map(is_ep, hosts)) if ok]
 
 
 class FakeEP:
@@ -168,6 +269,9 @@ class FakeEP:
     (x forward, y RIGHT, yaw clockwise). Used by MOCK=1 and the tests; touches no hardware."""
 
     label = "mock EP"
+    address = None
+    connected = True
+    error = None
     ARM_REACH = ((70, 230), (-60, 160))     # mm; outside it the arm says 'fail', like the real one near the edge
 
     def __init__(self):
@@ -182,8 +286,9 @@ class FakeEP:
         self._t = time.monotonic()
         self._lock = threading.Lock()
 
-    def open(self):
+    def open(self, wait_s: float = 0.0) -> bool:
         self.cmd("command")
+        return True
 
     def close(self):
         pass
@@ -295,14 +400,17 @@ class Rover:
         self.cancel = threading.Event()     # set by /stop, interrupts a /drive, /grip or /arm that is waiting
         self.speed_until = None             # monotonic deadline of the active /speed
         self.velocity = (0.0, 0.0, 0.0)
-        self.origin = (0.0, 0.0, 0.0)
+        self.origin = None                  # odometry zero: the first pose read (or /pose?reset=1)
         self.last = "ready"
         self._battery = (None, -1e9)
         self.drive_speed, self.turn_speed = DRIVE_SPEED, TURN_SPEED
         self.grip_wait, self.poll_s = GRIP_WAIT, 0.1
 
     def setup(self):
-        self.pose(reset=True)
+        try:
+            self.pose(reset=True)
+        except (OSError, SdkError):
+            pass                            # EP not there yet: the first pose that arrives becomes the zero
 
     def shutdown(self):
         try:
@@ -368,16 +476,21 @@ class Rover:
 
     def battery(self) -> Optional[int]:
         value, t = self._battery
-        if time.monotonic() - t > 5.0:
+        if time.monotonic() - t > 5.0 or not self.link.connected:
             value = int(self._query("robot battery ?")[0])
             self._battery = (value, time.monotonic())
         return value
+
+    def _rel(self, p) -> dict:
+        if self.origin is None:
+            self.origin = p
+        return _relative(p, self.origin)
 
     def pose(self, reset: bool = False) -> dict:
         p = self._abs_pose()
         if reset:
             self.origin = p
-        return {"ok": True, **_relative(p, self.origin)}
+        return {"ok": True, **self._rel(p)}
 
     def stop(self) -> dict:
         self.cancel.set()
@@ -440,7 +553,7 @@ class Rover:
             return {"ok": False, "error": "stopped" if result == "stopped" else "move did not finish in time",
                     "moved": moved}
         self.last = f"drove x {moved['x']:+.2f} m, y {moved['y']:+.2f} m, turned {moved['yaw']:+.0f} deg"
-        return {"ok": True, "moved": moved, "pose": _relative(end, self.origin)}
+        return {"ok": True, "moved": moved, "pose": self._rel(end)}
 
     def grip(self, action: str) -> dict:
         if action not in ("open", "close"):
@@ -551,7 +664,9 @@ class Camera:
             return self._seq, self._cache[size]
 
 
-def h264_frames(host: str):
+def h264_frames(host: Optional[str]):
+    if host is None:
+        raise ConnectionError("waiting for the EP")       # auto mode before the first connection; the camera retries
     import av                                           # only the real robot needs PyAV
     url = f"tcp://{host}:{VIDEO_PORT}"
     options = {"fflags": "nobuffer", "flags": "low_delay", "probesize": "32768", "analyzeduration": "0"}
@@ -593,9 +708,13 @@ def _num(q: dict, name: str, default=_REQUIRED):
 
 
 def _health(s, q):
+    """Always answers while the server runs: with the EP away it says why (ok: false), so the dashboard can tell
+    "rover server down" from "EP off or out of range"."""
     r = s.rover
-    return {"ok": True, "battery": r.battery(), "camera": s.camera.status, "robot": s.link_label, "mock": s.mock,
-            "moving": r.moving(), "last": r.last}
+    base = {"camera": s.camera.status, "robot": r.link.label, "mock": s.mock, "moving": r.moving(), "last": r.last}
+    if not r.link.connected:
+        return {"ok": False, "error": f"EP not connected: {r.link.error}", "battery": None, **base}
+    return {"ok": True, "battery": r.battery(), **base}
 
 
 ROUTES = {
@@ -658,12 +777,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(body).encode("utf-8"), "application/json")
 
     def _send(self, code: int, data: bytes, content_type: str):
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True       # the client gave up waiting; nothing to report
 
     def _mjpeg(self):
         self.send_response(200)
@@ -694,24 +816,28 @@ def _lan_ip() -> str:
 
 
 def main():
+    if "--find" in sys.argv[1:]:
+        print("Looking for RoboMaster EPs on this network ...")
+        found = find_eps()
+        print("\n".join(found) if found else "none found (is the EP on, in router mode, on this hotspot?)")
+        return
     link = FakeEP() if MOCK else SdkLink(HOST)
-    print(f"Connecting to {link.label} ...")
-    try:
-        link.open()
-    except OSError as e:
-        sys.exit(f"Cannot reach the EP at {HOST}:{SDK_PORT} ({e}).\n"
-                 "Is it on the hotspot in STA mode, is ROBOT_HOST its IP, and is no other app connected to it?")
     rover = Rover(link)
-    rover.setup()
-    print(f"Connected. Battery {rover.battery()}%.")
-    camera = Camera((lambda: fake_frames(link)) if MOCK else (lambda: h264_frames(HOST))).start()
-    stop = threading.Event()
-    threading.Thread(target=rover.watchdog, args=(stop,), daemon=True).start()
+    camera = Camera((lambda: fake_frames(link)) if MOCK else (lambda: h264_frames(link.address)))
     try:
         server = RobotServer((HTTP_HOST, HTTP_PORT), rover, camera, link.label, MOCK)
     except OSError as e:
-        rover.shutdown()
         sys.exit(f"Cannot listen on port {HTTP_PORT} ({e}). Is another robot_server running? Set PORT=... to use another.")
+    print("Looking for the EP on this network ..." if HOST == "auto" and not MOCK else f"Connecting to {link.label} ...")
+    if link.open():
+        rover.setup()
+        print(f"Connected to {link.label}. Battery {rover.battery()}%.")
+    else:
+        print(f"EP not reachable yet ({link.error}).\nServing anyway; the link keeps trying and connects when the EP "
+              "appears (ROBOT_HOST=<ip> skips the search).")
+    camera.start()
+    stop = threading.Event()
+    threading.Thread(target=rover.watchdog, args=(stop,), daemon=True).start()
     base = f"http://{_lan_ip()}:{HTTP_PORT}"
     print(f"Rover API on {base}   teleop page: {base}/   try: curl {base}/health\nCtrl-C stops the robot and quits.")
     signal.signal(signal.SIGTERM, signal.default_int_handler)     # `kill` also stops the robot on the way out

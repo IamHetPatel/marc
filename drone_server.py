@@ -119,6 +119,15 @@ class Link:
         except Exception:                              # noqa: BLE001
             self.lighthouse["deck"] = None
         try:
+            self.lighthouse["estimator"] = self.scf.cf.param.get_value("stabilizer.estimator")
+        except Exception:                              # noqa: BLE001
+            self.lighthouse["estimator"] = None
+        if self.lighthouse["deck"] is False or self.lighthouse["estimator"] not in (None, "2"):
+            print("!" * 70 + f"\n{self.uri}: Lighthouse deck detected={self.lighthouse['deck']}, "
+                  f"estimator={self.lighthouse['estimator']} (2 = Kalman).\nWithout the deck the drone uses the "
+                  "complementary estimator: x=y=0 and z = barometer height (~200 m).\nFix: power off, reseat the "
+                  "Lighthouse deck firmly, power on, restart this server.\n" + "!" * 70)
+        try:
             lh = LogConfig(name="lighthouse", period_in_ms=500)
             lh.add_variable("lighthouse.status", "uint8_t")
             for var in ("bsReceive", "bsActive", "bsGeoVal", "bsCalVal"):
@@ -138,8 +147,10 @@ class Link:
                                                    2: "estimating position"}.get(lh.get("status"), lh.get("status")),
                "receiving": ids(lh.get("bsReceive")), "used": ids(lh.get("bsActive")),
                "geometry": ids(lh.get("bsGeoVal")), "calibration": ids(lh.get("bsCalVal"))}
-        if out["deck"] is False:
-            out["hint"] = "Lighthouse deck not detected: reseat it and power-cycle"
+        out["estimator"] = {"1": "complementary", "2": "kalman"}.get(lh.get("estimator"), lh.get("estimator"))
+        if out["deck"] is False or out["estimator"] == "complementary":
+            out["hint"] = ("Lighthouse deck not detected at boot (complementary estimator: x=y=0, z=barometer): "
+                           "power off, reseat the deck firmly, power on, restart the server")
         elif "bsReceive" in lh and not out["receiving"]:
             out["hint"] = "no base station seen: are they powered (green LED)? is the deck facing up with a clear view?"
         elif "bsGeoVal" in lh and not out["geometry"]:

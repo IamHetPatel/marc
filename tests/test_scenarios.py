@@ -254,3 +254,15 @@ def test_the_report_page_is_readable_escaped_and_carries_the_photo(make_ctrl):
         assert "<script>alert(1)" not in r.text and "&lt;script&gt;" in r.text
         assert client.get("/report").json()["mission"]["status"] == "done"            # the JSON record stays
     assert (Path(c.cfg.runs_dir) / c.store.mission.id / "report.html").is_file()
+
+
+@pytest.mark.parametrize("name", [n for n in SCENARIOS if load_scenario(n).arena == "floor"])
+def test_floor_scenarios_run_without_ai_in_map_mode(name, make_ctrl, monkeypatch):
+    """The no-AI floor demo: search, approach, triage and the grip check all steer on positions."""
+    monkeypatch.setenv("ARENA", str(Path(__file__).resolve().parent.parent / "manager" / "arena.floor.json"))
+    c = make_ctrl(perception="map")
+    c.load_scenario(name)
+    wait_status(c, "awaiting_approval")
+    st = answer_questions(c)
+    assert st["mission"]["status"] == "done", (name, st["mission"]["error"])
+    assert any("Map mode" in m["text"] for m in st["messages"]) or "inspect" not in str(load_scenario(name).plan)

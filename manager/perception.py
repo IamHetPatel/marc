@@ -3,11 +3,14 @@
 VLM distance estimates are never used for control. `point` returns where the target is in the image
 (pixels); tools compare that to the calibrated grip line.
 """
+import math
 from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel
 
+from .adapters.mock import GRIP_DIST_M, HORIZON
 from .llm import LLMError
+from .scenarios import DEFAULT_LABEL
 
 
 class Perception(Protocol):
@@ -146,12 +149,86 @@ class NoPerception:
         raise LLMError(self.why)
 
 
+# ---------------------------------------------------------------- Map: positions instead of pixels (no AI)
+class MapPerception:
+    """No camera understanding at all: the camera steps answer from POSITIONS. The rover's pose (riding Crazyflie,
+    Lighthouse) and the wreck's known spot (the scenario's fixed target, else the marked finding) are projected
+    through the same camera model the mock uses, so search, approach and the grip check still steer the real rover,
+    on coordinates. For a floor demo without GEMINI_API_KEY; every answer says it came from the map, not the image."""
+
+    REACH_M = 0.45               # a target this close in front of the rover counts as held after the grip closes
+
+    def __init__(self, camera):
+        self.camera = camera
+        self.loc = self.detector = self.store = None      # bound by runtime.build_ctx
+
+    def bind(self, ctx):
+        self.loc, self.detector, self.store = ctx.loc, ctx.detector, ctx.store
+
+    def _objects(self) -> list:
+        """[{x, y, kind}] where things are believed to be: scenario targets first, else the findings."""
+        out = []
+        if self.detector is not None and hasattr(self.detector, "truth"):
+            kinds = {t.id: t.kind for t in getattr(self.detector, "targets", [])}
+            out = [{"x": t["x"], "y": t["y"], "kind": kinds.get(t["id"], "unknown")} for t in self.detector.truth()]
+        if not out and self.store is not None:
+            out = [{"x": f.x, "y": f.y, "kind": "unknown"} for f in self.store.findings if f.status != "recovered"]
+        return out
+
+    def _ahead(self):
+        """[(obj, forward_m, left_m)] in the rover frame, nearest first."""
+        pose = self.loc.rover_pose()
+        c, s = math.cos(math.radians(pose.yaw)), math.sin(math.radians(pose.yaw))
+        rows = []
+        for o in self._objects():
+            dx, dy = o["x"] - pose.x, o["y"] - pose.y
+            rows.append((o, c * dx + s * dy, -s * dx + c * dy))
+        return sorted(rows, key=lambda r: math.hypot(r[1], r[2]))
+
+    def point(self, jpeg, target):
+        cam = self.camera
+        half = math.radians(cam.fov_deg / 2)
+        for o, f, l in self._ahead():
+            if f < 0.05 or abs(math.atan2(l, f)) > half:
+                continue
+            horizon = cam.height * HORIZON
+            row = min(cam.height, horizon + (cam.grip_line_row - horizon) * GRIP_DIST_M / f)
+            col = cam.width / 2 - (l / f) / math.tan(half) * (cam.width / 2)
+            return {"col": col, "row": row, "label": f"{DEFAULT_LABEL.get(o['kind'], 'object')} (map)"}
+        return None
+
+    def inspect(self, jpeg, question):
+        near = [(o, f, l) for o, f, l in self._ahead() if math.hypot(f, l) <= 1.0]
+        if not near:
+            return {"answer": "Map mode: nothing is marked within 1 m of the rover.", "label": "nothing",
+                    "confidence": 1.0, "grippable": False, "category": "unknown", "hazardous": False,
+                    "reason": "no marked object nearby (camera not analysed)"}
+        o, f, l = near[0]
+        kind = o["kind"] if o["kind"] in KIND_TRIAGE else "unknown"
+        category, hazardous, reason = KIND_TRIAGE[kind]
+        label = DEFAULT_LABEL.get(kind, "object")
+        return {"answer": f"Map mode: the marked {label} is {math.hypot(f, l):.2f} m from the rover "
+                          f"(category from the scenario; the photo is kept but not analysed).",
+                "label": label, "confidence": 1.0, "grippable": True, "category": category,
+                "hazardous": hazardous, "reason": f"{reason} (from the scenario, not the camera)"}
+
+    def holding(self, jpeg):
+        near = [(f, l) for _, f, l in self._ahead() if -0.05 <= f <= self.REACH_M and abs(l) <= 0.2]
+        return {"holding": bool(near),
+                "reason": ("map mode: the object was in gripper reach when it closed" if near
+                           else "map mode: no marked object within gripper reach") + " (camera not analysed)"}
+
+
 def make_perception(cfg, arena, llm, world=None):
     mode = cfg.perception
     if mode == "auto":
         if world is None and llm is None:
-            return NoPerception("understanding the rover camera needs GEMINI_API_KEY")
+            return MapPerception(arena.camera)      # real rover, no key: steer on positions so the demo still runs
         mode = "mock" if world is not None else "gemini"
+    if mode == "map":
+        return MapPerception(arena.camera)
+    if mode == "none":
+        return NoPerception("PERCEPTION=none: the camera steps are switched off")
     if mode == "mock":
         if world is None:
             raise LLMError("PERCEPTION=mock needs ROVER=mock")

@@ -45,6 +45,9 @@ def call_with_timeout(fn: Callable, timeout: float):
 
 
 def have_api_key() -> bool:
+    """AI=off hides the key: built-in plans, rule supervisor, and the rover camera answers from the map."""
+    if os.getenv("AI", "on").lower() in ("off", "0", "false", "no"):
+        return False
     return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 

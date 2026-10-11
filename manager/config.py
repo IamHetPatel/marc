@@ -68,7 +68,7 @@ class Config:
     mock_time_scale: float = 1.0         # >1 runs the simulated clock faster than wall time
     mock_fail: dict = field(default_factory=dict)
     mock_seed: int = 7
-    perception: str = "auto"             # auto | mock | gemini
+    perception: str = "auto"             # auto | mock | gemini | map (positions, no AI) | none
     # --- server
     host: str = "0.0.0.0"
     port: int = 8002

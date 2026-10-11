@@ -52,6 +52,8 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone, loc=loc, perception=perception,
               safety=safety, clock=clock, faults=faults, detector=build_detector(cfg, drone, overhead),
               overhead=overhead)
+    if hasattr(perception, "bind"):
+        perception.bind(ctx)                    # map perception reads the rover pose and the targets
     if cfg.rover_rider == "target" and hasattr(ctx.detector, "live_ok"):
         ctx.detector.live_ok = False            # the target Crazyflie rides on the rover: it is not the wreck
     return ctx, world

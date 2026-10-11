@@ -16,7 +16,7 @@ import requests
 from manager.adapters.base import RobotError
 from manager.controller import Monitor
 from manager.models import Rect, load_arena
-from manager.perception import NoPerception
+from manager.perception import MapPerception, NoPerception
 from manager.runtime import build_controller, build_ctx
 from manager.server import create_app
 from manager.tools import run_action
@@ -85,12 +85,25 @@ def test_health_is_polled_trimmed_and_never_trips_the_watchdog(cfg):
     assert mon.fails["drone"] == 0
 
 
-def test_a_real_rover_without_a_gemini_key_still_starts(cfg):
-    """Floor bring-up (manual driving) needs no AI; only seeing with the camera does."""
+def test_a_real_rover_without_a_gemini_key_steers_on_the_map(cfg):
+    """Without AI a real rover still runs a demo: the camera steps answer from positions (map mode)."""
     ctx, _ = build_ctx(dataclasses.replace(cfg, rover="http://127.0.0.1:9", perception="auto"), llm=None)
+    assert isinstance(ctx.perception, MapPerception) and ctx.perception.loc is ctx.loc
+
+
+def test_perception_none_switches_the_camera_steps_off(cfg):
+    ctx, _ = build_ctx(dataclasses.replace(cfg, rover="http://127.0.0.1:9", perception="none"), llm=None)
     assert isinstance(ctx.perception, NoPerception)
-    with pytest.raises(Exception, match="GEMINI_API_KEY"):
+    with pytest.raises(Exception, match="switched off"):
         ctx.perception.inspect(b"", "what is it?")
+
+
+def test_ai_off_hides_the_key(monkeypatch):
+    from manager.llm import have_api_key
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert have_api_key()
+    monkeypatch.setenv("AI", "off")
+    assert not have_api_key()
 
 
 # ---------------------------------------------------------------- rover video relay
@@ -126,12 +139,13 @@ def test_no_video_relay_for_a_mock_rover(cfg):
 
 # ---------------------------------------------------------------- the real drone_server.py process
 @pytest.fixture
-def drone_server():
+def drone_server(request):
     pytest.importorskip("flask")
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    env = {**os.environ, "MOCK": "1", "MOCK_TIME_SCALE": "50", "PORT": str(port)}
+    env = {**os.environ, "MOCK": "1", "MOCK_TIME_SCALE": "50", "PORT": str(port),
+           **getattr(request, "param", {})}
     proc = subprocess.Popen([sys.executable, str(ROOT / "drone_server.py")], cwd=ROOT, env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     url = f"http://127.0.0.1:{port}"
@@ -163,3 +177,14 @@ def test_the_mothership_flies_the_real_drone_server(cfg, drone_server, monkeypat
     assert run_action(ctx, "drone_land", {})["ok"]
     assert ctx.drone.pose()["state"] == "landed"
     assert ctx.drone.health()["cage"]["x0"] == ctx.arena.drone_cage.x0
+
+
+@pytest.mark.parametrize("drone_server", [{"MOCK_PAD": "-1.84,0.92"}], indirect=True)
+def test_a_scout_on_a_pad_outside_the_cage_takes_off_and_docks_back_on_it(drone_server):
+    """The measured pad is 0.18 m outside the cage: takeoff there is a vertical lift and must not be refused."""
+    up = requests.get(drone_server + "/takeoff", params={"z": 0.4}, timeout=10).json()
+    assert up["ok"], up
+    assert requests.get(drone_server + "/goto", params={"x": 0.0, "y": 0.0, "z": 0.4}, timeout=10).json()["ok"]
+    requests.get(drone_server + "/land", timeout=10)
+    docked = requests.get(drone_server + "/dock", timeout=20).json()
+    assert docked["ok"] and (docked["pose"]["x"], docked["pose"]["y"]) == (-1.84, 0.92)

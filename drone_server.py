@@ -7,8 +7,9 @@ sends land, and returns at once. Motion calls that see a newer generation stop a
 
 Env:
   SCOUT_URI   radio URI of the flying drone (default: the one confirmed by cfclient)
-  TARGET_URI  radio URI of the floor drone; empty = /pose?cf=target answers {"ok": false}
+  TARGET_URI  radio URI of the floor drone (default ...04, rides on the rover; only read, never flown); empty = none
   CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: DEFAULT_CAGE, measured on the floor)
+  GEOFENCE=0  stop enforcing the cage (x/y limits, lost-tracking check); on by default
   MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y" (default 1.0,0.3)
 """
 import math
@@ -22,8 +23,8 @@ app = Flask(__name__)
 MOCK = os.getenv("MOCK", "0") == "1"
 MOCK_TIME_SCALE = float(os.getenv("MOCK_TIME_SCALE", "10"))  # mock flights take real duration / this
 
-SCOUT_URI = os.getenv("SCOUT_URI", "radio://0/80/2M/E7E7E7E704")  # confirmed by cfclient (address ends in 04)
-TARGET_URI = os.getenv("TARGET_URI", "")
+SCOUT_URI = os.getenv("SCOUT_URI", "radio://0/80/2M/E7E7E7E761")  # current scout (address ends in 61); was ...04
+TARGET_URI = os.getenv("TARGET_URI", "radio://0/80/2M/E7E7E7E704")  # rides on the rover, never flies; "" = none
 FLY_Z = 0.6          # default flight height (m)
 DOCK_Z = 0.27        # plate height, arena.json plate_offset.dock_z
 DIP_M = 0.12         # zrange dip below the floor median that counts as "something here"
@@ -35,11 +36,13 @@ CONNECT_TRIES = 3
 PORT = int(os.getenv("PORT", "8001"))
 
 
-# Measured 2026-10-10 by walking the scout to the cage corners (Lighthouse frame, origin inside the cage):
-# (2.06, -0.71), (1.96, 1.18), (-1.35, 1.48); the fourth corner read garbage (tracking lost), to re-measure.
-# The field is 5 m x 3 m, assumed centred on the Lighthouse origin (x -2.5..2.5, y -1.5..1.5); the default is
-# 0.3 m in from each wall. Keep equal to manager/arena.floor.json drone_cage (tests/test_integration.py checks).
-DEFAULT_CAGE = "-2.2,-1.2,2.2,1.2,1.2"
+# Measured 2026-10-11 with the scout at the edge of good Lighthouse reception (Lighthouse frame, metres):
+#   (2.208, -0.683)  (-1.633, -0.755)  (-2.551, 1.195)  and +x+y = (1.96, 1.18) from the 2026-10-10 floor walk,
+#   because today's reading there, (1.763, -4.05, z -0.107), was a tracking dropout.
+# These are reception limits, not the walls, so no inset. The cage is the largest x/y-aligned box inside that
+# four-sided shape (its -x side slants, so the pad at (-1.84, 0.92) sits 0.18 m outside; takeoff allows 0.3 m).
+# z_max is not measured yet. Keep equal to manager/arena.floor.json drone_cage (tests/test_integration.py checks).
+DEFAULT_CAGE = "-1.66,-0.68,1.96,1.18,1.2"
 SANE_MARGIN_M = 1.5  # a pose this far outside the cage means Lighthouse tracking is lost, not a real position
 TAKEOFF_MARGIN_M = 0.3  # takeoff is a vertical lift, so it may start up to the measured walls (the cage is inset 0.3 m)
 
@@ -50,10 +53,13 @@ def _load_cage():
 
 
 CAGE = _load_cage()
+GEOFENCE = os.getenv("GEOFENCE", "1") == "1"  # GEOFENCE=0 switches the x/y checks off
 
 
 def _outside_cage(x, y, z=None, margin=0.0):
     """Error string if the point is outside the geofence (grown by margin), else None."""
+    if not GEOFENCE:
+        return None
     m = margin
     if not (CAGE["x0"] - m <= x <= CAGE["x1"] + m and CAGE["y0"] - m <= y <= CAGE["y1"] + m):
         return (f"({x:.2f}, {y:.2f}) is outside the cage x {CAGE['x0']}..{CAGE['x1']}, "
@@ -64,6 +70,8 @@ def _outside_cage(x, y, z=None, margin=0.0):
 
 
 def _sane(p):
+    if not GEOFENCE:
+        return True
     m = SANE_MARGIN_M
     return (CAGE["x0"] - m <= p["x"] <= CAGE["x1"] + m and CAGE["y0"] - m <= p["y"] <= CAGE["y1"] + m
             and -0.5 <= p["z"] <= CAGE["z_max"] + m)
@@ -427,7 +435,7 @@ elif TARGET_URI:
     except Exception as e:                    # noqa: BLE001  the scout must still fly without the target
         print(f"Target {TARGET_URI} not reachable: {e}")
         target = None
-print(f"Geofence: {CAGE}")
+print(f"Geofence: {CAGE}" if GEOFENCE else "Geofence: OFF (x/y unchecked; set GEOFENCE=1 to enforce)")
 
 
 # ── endpoints ────────────────────────────────────────────────────────────────
@@ -444,7 +452,7 @@ def _on_error(e):
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "mock": MOCK, "cage": CAGE,
+    return jsonify({"ok": True, "mock": MOCK, "cage": CAGE, "geofence": GEOFENCE,
                     "scout": scout.link.snapshot(scout.state).get("error") or "connected",
                     "scout_lighthouse": None if MOCK else scout.link.lighthouse_report(),
                     "target": ("connected" if target else "none") if not target or MOCK

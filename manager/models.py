@@ -112,6 +112,9 @@ class Arena(BaseModel):
                                                          # (x forward, y left; default: right behind it, same heading)
     launch_pad: Optional[Pose] = None               # where the scout takes off and returns to (may be outside bounds)
     view: Optional[Rect] = None                     # what the dashboard map shows: the whole net and the pad
+    finding_standoff_m: float = 0.6                 # rover_goto stops this far short of a finding unless the step
+                                                    # says standoff (the camera must still see the object)
+    goto_tolerance_m: float = 0.15                  # rover_goto counts as arrived within this distance
 
     def zone(self, name: str) -> Optional[Rect]:
         return self.zones.get(name)
@@ -148,6 +151,7 @@ def load_arena(path: Optional[str] = None) -> Arena:
         launch_pad=Pose(**raw["launch_pad"]) if raw.get("launch_pad") else None,
         **({"anchor_offset": Pose(**raw["anchor_offset"])} if raw.get("anchor_offset") else {}),
         view=Rect(**raw["view"]) if raw.get("view") else None,
+        **{k: raw[k] for k in ("finding_standoff_m", "goto_tolerance_m") if k in raw},
     )
 
 
@@ -170,6 +174,7 @@ class StepDraft(BaseModel):
     mode: Optional[str] = None         # open|close for rover_grip, pick|carry|home for rover_arm
     text: Optional[str] = None
     finding_id: Optional[str] = None
+    standoff: Optional[float] = None   # rover_goto: metres to stop short of a finding (0 = onto the spot)
 
     def args(self) -> dict:
         skip = {"robot", "action", "why"}

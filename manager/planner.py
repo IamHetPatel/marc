@@ -52,7 +52,8 @@ def rules_text(dock_mode: bool, overhead: bool = False) -> str:
         *([OVERHEAD_RULE] if overhead else []),
         'A recovery goes in this order: drone_search the field named in the mission, drone_mark "$finding.f1", '
         'rover_goto "$finding.f1", drone_home, rover_search for the object, rover_inspect. If the mission only asks '
-        "to look, check or find, stop there and report.",
+        "to look, check or find, stop there and report. If it only asks to drive (or go, or bring the rover) to the "
+        'spot, use rover_goto "$finding.f1" with standoff 0 so the rover ends on the spot, then drone_home.',
         'Detections get ids f1, f2, ... They do not exist yet when you plan: write "$finding.f1". Use "$zone.<name>" '
         'for named zones (field_a, field_b, base, disposal) and "$home" for the start position.',
         "Never pick anything up without rover_inspect first. A hostile or unknown drone is hazardous: ask the "

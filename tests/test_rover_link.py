@@ -61,8 +61,8 @@ class FlakyEP:
         self.srv.close()
 
 
-def link_to(ep, timeout=0.3):
-    link = rs.SdkLink("127.0.0.1", port=ep.port, timeout=timeout)
+def link_to(ep, timeout=0.3, dead_s=0.0):
+    link = rs.SdkLink("127.0.0.1", port=ep.port, timeout=timeout, dead_s=dead_s)
     link.RETRY_S, link.RETRY_MAX_S = 0.05, 0.1
     assert link.open(wait_s=3)
     return link
@@ -109,6 +109,20 @@ def test_three_timeouts_in_a_row_drop_and_the_link_comes_back():
             time.sleep(0.02)
         time.sleep(1.1)                              # the delayed replies went to the old, closed socket
         assert link.cmd("robot battery ?") == "87" and link.stats["connects"] == 2
+    finally:
+        link.close(); ep.close()
+
+
+def test_timeouts_within_dead_s_keep_the_link():
+    """A hotspot stall: several replies in a row time out, but the link was alive moments ago, so it stays."""
+    ep = FlakyEP()
+    link = link_to(ep, timeout=0.15, dead_s=5.0)
+    try:
+        ep.delays = [1.0, 1.0, 1.0, 1.0]
+        for _ in range(4):
+            with pytest.raises(OSError):
+                link.cmd("robot battery ?")
+        assert link.connected and link.stats["drops"] == 0
     finally:
         link.close(); ep.close()
 

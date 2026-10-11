@@ -18,9 +18,11 @@ class Safety:
         return None
 
     def rover_target(self, x: float, y: float) -> Optional[str]:
-        if not self.arena.bounds.contains(x, y):
-            b = self.arena.bounds
-            return f"({x:.2f}, {y:.2f}) is outside the arena [{b.x0}..{b.x1}] x [{b.y0}..{b.y1}]"
+        """Anywhere on the map (the field plus its margin): the rover is slow and the floor is open, so the limit is
+        only there to catch a goal in the wrong frame (metres off the map), not to fence the field."""
+        v = self.arena.view_rect()
+        if not v.contains(x, y, margin=0.2):
+            return f"({x:.2f}, {y:.2f}) is off the map [{v.x0:.1f}..{v.x1:.1f}] x [{v.y0:.1f}..{v.y1:.1f}]"
         return None
 
     def drone_target(self, x: float, y: float, z: Optional[float] = None) -> Optional[str]:

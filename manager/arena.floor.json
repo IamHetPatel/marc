@@ -28,8 +28,8 @@
     "z_max": 1.2
   },
   "home": {
-    "x": -2.1,
-    "y": 0.9,
+    "x": -2.0,
+    "y": 0.45,
     "yaw": 0.0
   },
   "plate_offset": {
@@ -134,8 +134,21 @@
     }
   ],
   "_cage_note": "drone_cage measured 2026-10-11: largest x/y-aligned box inside the drone's Lighthouse reception corners (2.208,-0.683) (1.96,1.18 from 2026-10-10) (-2.551,1.195) (-1.633,-0.755); no inset. Same as drone_server.py DEFAULT_CAGE.",
-  "_zones_note": "Zones fitted 2026-10-11 to the Lighthouse reception area (= drone_cage): with ROVER_RIDER=target the rover's position comes from the riding Crazyflie, so everything the rover drives to must be where Lighthouse reaches. disposal moved from the bottom-left corner (no reception there: the -x side of the reception area slants) to x -1.6..-0.9, y -0.68..0; field_a = x -0.8..0.6, field_b = x 0.6..1.96, both y -0.68..1.18. base keeps the rover start (-2.1, 0.9), which is inside reception at that y. launch_pad = the scout's pad measured with the cage.",
-  "_plate_note": "plate_offset = where the riding Crazyflie (...04) sits in the ROVER's frame (x forward, y left): back-right corner, about 5 cm back and 5 cm right of centre (2026-10-11, estimate; measure it). Its front must face the rover's front, else set yaw.",
+  "_zones_note": "Zones fitted 2026-10-11 to the Lighthouse reception area (= drone_cage): with ROVER_RIDER=target the rover's position comes from the riding Crazyflie, so everything the rover drives to must be where Lighthouse reaches. disposal moved from the bottom-left corner (no reception there: the -x side of the reception area slants) to x -1.6..-0.9, y -0.68..0; field_a = x -0.8..0.6, field_b = x 0.6..1.96, both y -0.68..1.18. base holds the rover start (see _home_note). launch_pad = the scout's pad measured with the cage.",
+  "_plate_note": "plate_offset is the docking plate (DOCK_MODE). The riding Crazyflie uses rider_mount.",
   "goto_tolerance_m": 0.08,
-  "_goto_note": "rover_goto counts as arrived within goto_tolerance_m. It stops 0.6 m short of a drone finding (the camera must see it) unless the step sets standoff (0 = onto the spot, floor_mark_and_drive). The rover's position is the riding Crazyflie's Lighthouse pose minus plate_offset (ROVER_RIDER=target)."
+  "_goto_note": "rover_goto counts as arrived within goto_tolerance_m. It stops 0.6 m short of a drone finding (the camera must see it) unless the step sets standoff (0 = onto the spot, floor_mark_and_drive). The rover's position is the riding Crazyflie's Lighthouse pose minus plate_offset (ROVER_RIDER=target).",
+  "rover": {
+    "length_m": 0.3,
+    "width_m": 0.24,
+    "grip_reach_m": 0.27,
+    "_note": "EP footprint 30 x 24 cm. grip_reach_m = from the centre of the four wheels (what it turns about) to the middle of the OPEN jaws with the arm in pick: put the bottle between the jaws and measure it. rover_approach stops when the bottle's spot is there."
+  },
+  "rider_mount": {
+    "x": -0.11,
+    "y": -0.09,
+    "yaw": 0.0,
+    "_note": "The riding Crazyflie (...04) in the ROVER frame (x forward, y left, metres) and its heading minus the rover's (deg). Estimate from the 2026-10-11 photo: back-right corner of the 30 x 24 cm rover. Run Manual control > 'Calibrate rider' once on the floor (25 cm forward, half a turn, back): it measures all three and keeps them in runs/rider_mount.json, which wins over this."
+  },
+  "_home_note": "home = the rover's start and where it brings our own drones: (-2.0, 0.45) in the base zone, 0.47 m from the scout's pad (-1.84, 0.92) so the rover never parks on it; inside Lighthouse reception (its -x edge is at x -2.2 for this y)."
 }

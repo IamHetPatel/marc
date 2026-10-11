@@ -2,12 +2,12 @@
 from types import SimpleNamespace
 
 from manager.detector import SimDetector, Target
-from manager.models import Camera
+from manager.models import Camera, load_arena
 from manager.perception import MapPerception
 
 
 def _perception(x, y, yaw, targets):
-    p = MapPerception(Camera())
+    p = MapPerception(load_arena())
     det = SimDetector(drone=None)
     det.set_targets(targets)
     pose = SimpleNamespace(x=x, y=y, yaw=yaw)

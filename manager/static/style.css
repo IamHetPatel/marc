@@ -298,6 +298,9 @@ td .what { display: block; font-size: 14.5px; text-transform: capitalize; } td .
 .rover-body { fill: var(--rover); stroke: var(--map-bg); stroke-width: 2; stroke-linejoin: round; }
 .rover-nose { fill: var(--map-bg); opacity: .85; }
 .rover-ray { stroke: var(--rover); stroke-width: 1.2; stroke-dasharray: 2 3; opacity: .7; }
+.rover-grip { fill: none; stroke: var(--rover); stroke-width: 1.6; }
+.rover-rider { fill: var(--scout); stroke: var(--map-bg); stroke-width: 1; }
+#mk-rover.lost { opacity: .4; }
 .scout-core { fill: var(--scout); stroke: var(--map-bg); stroke-width: 2; }
 .scout-arm { stroke: var(--scout); stroke-width: 2; }
 .scout-rotor { fill: var(--scout); fill-opacity: .22; stroke: var(--scout); stroke-width: 1.4; transform-box: fill-box; transform-origin: center; }

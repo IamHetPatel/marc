@@ -85,6 +85,14 @@ class Overhead(BaseModel):
     max_age_s: float = 0.5                   # an older rover sighting is not used as a position fix
 
 
+class RoverBody(BaseModel):
+    """The EP's footprint and where its gripper closes, in the rover frame (x forward, y left; origin = the centre of
+    the four wheels, which is also what it turns about)."""
+    length_m: float = 0.30
+    width_m: float = 0.24
+    grip_reach_m: float = 0.25       # centre -> middle of the open jaws with the arm in "pick": the object goes here
+
+
 class MockObject(BaseModel):
     label: str
     kind: str = "unknown"            # own_drone | hostile_drone | decoy | unknown
@@ -115,6 +123,13 @@ class Arena(BaseModel):
     finding_standoff_m: float = 0.6                 # rover_goto stops this far short of a finding unless the step
                                                     # says standoff (the camera must still see the object)
     goto_tolerance_m: float = 0.15                  # rover_goto counts as arrived within this distance
+    rover: RoverBody = RoverBody()
+    rider_mount: Optional[Pose] = None              # where the riding Crazyflie sits in the ROVER frame, and how much
+                                                    # its heading is turned from the rover's (None: plate_offset)
+
+    def mount(self) -> Pose:
+        """The riding Crazyflie's mount (x, y in the rover frame, yaw = its heading minus the rover's)."""
+        return self.rider_mount or self.plate_offset
 
     def zone(self, name: str) -> Optional[Rect]:
         return self.zones.get(name)
@@ -152,6 +167,9 @@ def load_arena(path: Optional[str] = None) -> Arena:
         **({"anchor_offset": Pose(**raw["anchor_offset"])} if raw.get("anchor_offset") else {}),
         view=Rect(**raw["view"]) if raw.get("view") else None,
         **{k: raw[k] for k in ("finding_standoff_m", "goto_tolerance_m") if k in raw},
+        rover=RoverBody(**{k: v for k, v in raw.get("rover", {}).items() if not k.startswith("_")}),
+        rider_mount=Pose(**{k: v for k, v in raw["rider_mount"].items() if k in ("x", "y", "yaw")})
+        if raw.get("rider_mount") else None,
     )
 
 

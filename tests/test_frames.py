@@ -59,7 +59,7 @@ def test_goto_stops_when_the_rovers_position_is_outside_the_mapped_area(ctx):
 
 def test_a_goal_outside_the_arena_is_refused_before_moving(ctx):
     r = run_action(ctx, "rover_goto", {"x": 7.0, "y": 1.5})
-    assert r["ok"] is False and "outside the arena" in r["error"]
+    assert r["ok"] is False and "off the map" in r["error"]
 
 
 # ---------------------------------------------------------------- launch pad, drone_home, map view

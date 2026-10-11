@@ -169,7 +169,7 @@
     .go:disabled { opacity: .5; cursor: default; }
     .go .ic { width: 22px; height: 22px; }
     .hint { margin-top: 10px; font-size: 13px; color: var(--ink-3); min-height: 1em; }
-    .mission-line { padding: 14px 18px; display: flex; align-items: center; gap: 12px; }
+    .mission-line { padding: 14px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
     .mission-line .q { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mission-line .k { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: block; font-weight: 600; }
     .again { height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-2); cursor: pointer; font-weight: 500; }
@@ -177,13 +177,13 @@
 
     /* ---------------------------------------------------------------- steps */
     .steps-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    #steps { list-style: none; margin: 0; padding: 0 8px 8px; overflow: auto; flex: 1; scrollbar-width: thin; }
-    .step { position: relative; display: grid; grid-template-columns: 34px 1fr 26px; align-items: center; gap: 12px; padding: 10px; border-radius: 8px;
+    #steps { list-style: none; margin: 0; padding: 0 8px 4px; overflow: auto; flex: 1; scrollbar-width: thin; }
+    .step { position: relative; display: grid; grid-template-columns: 32px 1fr 26px; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 8px;
       color: var(--ink-3); transition: background .3s, color .3s; overflow: hidden; }
-    .step .who { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); }
+    .step .who { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); }
     .step .who .ic { width: 20px; height: 20px; }
-    .step .t { font-size: 16px; font-weight: 500; }
-    .step .d { font-size: 13.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+    .step .t { font-size: 15.5px; font-weight: 500; line-height: 1.35; }
+    .step .d { font-size: 13px; line-height: 1.35; color: var(--ink-3); font-variant-numeric: tabular-nums; min-height: 1.2em; }
     .step .mark { width: 22px; height: 22px; display: grid; place-items: center; }
     .step .mark .ic { width: 20px; height: 20px; }
     .step.run { background: var(--surface-2); color: var(--ink); }
@@ -194,8 +194,8 @@
     .step.done .mark { color: var(--good); }
     .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--good); animation: spin .8s linear infinite; }
     .step .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--good); width: 0; transition: width .2s linear; }
-    .summary { margin: 4px 8px 12px; padding: 12px 14px; border-radius: 8px; background: var(--good-bg); color: var(--ink); display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
-    .summary .ic { color: var(--good); margin-top: 2px; }
+    .summary { flex-basis: 100%; color: var(--ink-2); display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4; }
+    .summary .ic { color: var(--good); width: 18px; height: 18px; margin-top: 1px; }
 
     /* ---------------------------------------------------------------- finding */
     .finding { padding: 14px; display: flex; gap: 14px; align-items: center; animation: in .4s var(--ease); }
@@ -291,6 +291,7 @@
       <section class="card mission-line" id="mission-card" hidden>
         <div style="flex:1;min-width:0"><span class="k">Mission</span><div class="q" id="mission-text"></div></div>
         <button class="again" id="again" type="button" hidden>New mission</button>
+        <div class="summary" id="summary" hidden><svg class="ic"><use href="#i-check"/></svg><span id="summary-text"></span></div>
       </section>
       <section class="card finding" id="finding" hidden>
         <svg class="thumb" id="thumb" viewBox="0 0 160 100" aria-hidden="true"></svg>
@@ -303,7 +304,6 @@
       <section class="card steps-card">
         <div class="card-head"><h2>Mission steps</h2></div>
         <ol id="steps"></ol>
-        <div class="summary" id="summary" hidden><svg class="ic"><use href="#i-check"/></svg><span id="summary-text"></span></div>
       </section>
     </div>
   </main>
@@ -332,16 +332,17 @@
     view: { x0: -2.7, y0: -1.7, x1: 2.7, y1: 1.7 },              // what the map shows (metres, Lighthouse frame)
     field: { x0: -2.5, y0: -1.5, x1: 2.5, y1: 1.5 },             // the net
     zones: [
-      { name: "Base", rect: [-2.5, 0.3, -1.5, 1.5], kind: "base" },
       { name: "Field A", rect: [-0.8, -0.68, 0.6, 1.18], kind: "field" },
-      { name: "Field B", rect: [0.6, -0.68, 1.96, 1.18], kind: "field" }
+      { name: "Field B", rect: [0.6, -0.68, 1.96, 1.18], kind: "field" },
+      { name: "Disposal", rect: [1.12, -0.68, 1.96, 0.45], kind: "disposal" }   // bottom right: also the base, both robots start here
     ],
-    scan: { x0: -0.8, y0: -0.68, x1: 1.96, y1: 1.18, lanes: 4 },  // the area the scout sweeps
-    pad: { x: -1.84, y: 0.92 },                                  // scout launch pad
-    rover: { x: -2.15, y: 0.5, yaw: 0 },                         // rover start, yaw in degrees (0 = facing +x)
+    // Start spots and the object, read off the floor-run screenshots in new-demo/.
+    pad: { x: 1.55, y: -0.40 },                                  // scout launch pad
+    rover: { x: 1.44, y: 0.03, yaw: 180 },                       // rover start, yaw in degrees (180 = facing field A)
     object: { x: -0.2, y: 0.0, name: "Crashed drone", match: 92 },
-    altitude: 1.0, markAltitude: 0.6, standoff: 0.5, detectRadius: 0.3,
-    seconds: { plan: 3, takeoff: 3, scan: 12, mark: 3, drive: 9, confirm: 6 },
+    searchEnd: { x: -0.75, y: 0.13 },                            // search line: pad -> here; the scout stops when it sees the object
+    altitude: 0.6, returnAltitude: 0.35, standoff: 0.35, detectRadius: 0.3, swath: 0.6,
+    seconds: { plan: 3, takeoff: 3, scan: 8, mark: 3, home: 7, drive: 8, confirm: 4 },
     battery: { scout: 94, rover: 81 }
   };
 
@@ -389,21 +390,14 @@
   function ptsAttr(pts) { return pts.map(function (p) { return X(p.x).toFixed(1) + "," + Y(p.y).toFixed(1); }).join(" "); }
 
   /* ------------------------------------------------------------ the routes */
-  var SC = CFG.scan, lanePts = [], laneGap = (SC.y1 - SC.y0) / SC.lanes, inset = Math.min(0.2, (SC.x1 - SC.x0) / 4);
-  for (var l = 0; l < SC.lanes; l++) {
-    var ly = SC.y1 - laneGap * (l + .5), xa = SC.x0 + inset, xb = SC.x1 - inset;
-    if (l % 2) { var tmp = xa; xa = xb; xb = tmp; }
-    lanePts.push({ x: xa, y: ly }, { x: xb, y: ly });
-  }
-  var SCAN = path([{ x: CFG.pad.x, y: CFG.pad.y }].concat(lanePts));
-  var TRANSIT = SCAN.cum[1];                                    // pad -> first lane: flying there, not scanning yet
-  var DETECT = SCAN.len;                                        // how far along the scan the camera sees the object
-  for (var d = TRANSIT; d <= SCAN.len; d += 0.01) {
+  var SCAN = path([{ x: CFG.pad.x, y: CFG.pad.y }, CFG.searchEnd]);  // the scout's search line, straight across B then A
+  var DETECT = SCAN.len;                                        // how far along it the camera sees the object
+  for (var d = 0; d <= SCAN.len; d += 0.01) {
     if (dist(along(SCAN, d), CFG.object) < CFG.detectRadius) { DETECT = d; break; }
   }
   var OBJ = CFG.object;
   var ROVER_PATH = (function () {                                // a gentle curve from the rover's start, stopping short
-    var s = CFG.rover, yaw = s.yaw * Math.PI / 180, total = dist(s, OBJ), reach = Math.max(0, total - CFG.standoff);
+    var s = CFG.rover, yaw = s.yaw * Math.PI / 180, total = dist(s, OBJ);
     var c = { x: s.x + Math.cos(yaw) * total * .45, y: s.y + Math.sin(yaw) * total * .45 }, pts = [];
     for (var i = 0; i <= 40; i++) {
       var t = i / 40, u = 1 - t;
@@ -429,11 +423,11 @@
   var ICON = { ai: "i-hub", scout: "i-scout", rover: "i-rover" };
   var STEPS = [
     { robot: "ai", title: "Plan the mission", secs: "plan",
-      start: function () { log("ai", "Mission received: “" + S.text + "”"); },
+      start: function () { log("ai", "Mission received: \u201c" + S.text + "\u201d"); },
       update: function (p) {
         if (p > .45 && !S.flags.planned) {
-          S.flags.planned = true; el.plan.style.opacity = .55;
-          log("ai", "Plan: the scout sweeps fields A and B in " + SC.lanes + " lanes, the rover waits at base");
+          S.flags.planned = true;
+          log("ai", "Plan: the scout flies a search line across fields B and A, the rover waits until the scout is back on its pad");
         }
       },
       detail: function (p) { return p < .45 ? "Reading the map of the field" : "Scout searches, rover checks"; },
@@ -447,62 +441,66 @@
       status: "Scout is taking off" },
 
     { robot: "scout", title: "Scout scans the field", secs: "scan", hold: true,
-      start: function () { log("scout", "Flying the search pattern, camera looking down"); },
+      start: function () { log("scout", "Flying the search line, camera looking down"); },
       update: function (p) {
         S.scanD = DETECT * p;
         var q = along(SCAN, S.scanD); D.x = q.x; D.y = q.y;
-        var lane = laneAt(S.scanD);
-        if (lane > (S.flags.lane || 0)) { S.flags.lane = lane; log("scout", "Lane " + lane + " of " + SC.lanes); }
+        var z = zoneAt(D);
+        if (z && z !== S.flags.zone) { S.flags.zone = z; log("scout", "Scanning " + z); }
       },
-      detail: function () { return "Covered " + coverage() + "% of the field"; },
-      status: function () { return "Scout is scanning the field · " + coverage() + "%"; } },
+      detail: function () { return (zoneAt(D) ? "Over " + zoneAt(D) : "Flying out") + " \u00b7 " + S.scanD.toFixed(1) + " m flown"; },
+      status: function () { return "Scout is scanning " + (zoneAt(D) || "the field"); } },
 
     { robot: "scout", title: "Object found, scout marks it", secs: "mark",
       start: function () {
         S.flags.from = { x: D.x, y: D.y };
         showFinding();
         log("vision", "Spotted: " + OBJ.name.toLowerCase() + " (" + OBJ.match + "% match)");
-        log("scout", "Stopping the search and hovering over it");
+        log("scout", "Stopping the search and hovering over it to mark the spot");
       },
-      update: function (p) {
-        var e = ease(p);
-        D.x = lerp(S.flags.from.x, OBJ.x, e); D.y = lerp(S.flags.from.y, OBJ.y, e);
-        D.z = lerp(CFG.altitude, CFG.markAltitude, e);
-      },
+      update: function (p) { var e = ease(p); D.x = lerp(S.flags.from.x, OBJ.x, e); D.y = lerp(S.flags.from.y, OBJ.y, e); },
       detail: function () { return OBJ.name + " at x " + OBJ.x.toFixed(2) + ", y " + OBJ.y.toFixed(2); },
       status: function () { return "Found: " + OBJ.name.toLowerCase(); } },
+
+    { robot: "scout", title: "Scout flies back and lands", secs: "home", hold: true,
+      start: function () {
+        S.flags.from = { x: D.x, y: D.y, z: D.z };
+        log("scout", "Flying back to the pad, out of the rover's way");
+      },
+      update: function (p) {
+        var e = ease(Math.min(1, p / .8));                       // fly home while descending, then land
+        D.x = lerp(S.flags.from.x, CFG.pad.x, e); D.y = lerp(S.flags.from.y, CFG.pad.y, e);
+        D.z = p < .8 ? lerp(S.flags.from.z, CFG.returnAltitude, e) : CFG.returnAltitude * (1 - ease((p - .8) / .2));
+      },
+      done: function () { D.z = 0; log("scout", "Landed on the pad"); },
+      detail: function () { var r = dist(D, CFG.pad); return r > .05 ? r.toFixed(1) + " m to the pad \u00b7 altitude " + D.z.toFixed(2) + " m" : "Landing"; },
+      status: "Scout is flying back to its pad" },
 
     { robot: "rover", title: "Rover drives to it", secs: "drive", hold: true,
       start: function () {
         el.route.style.opacity = 1;
-        log("ai", "Sending the rover, it stops " + CFG.standoff.toFixed(1) + " m short so the camera can see");
+        log("ai", "Scout is down. Sending the rover, it stops just short so its camera can see");
       },
       update: function (p) { var q = along(ROVER_PATH, ROVER_PATH.len * ease(p)); R.x = q.x; R.y = q.y; R.yaw = q.yaw; },
       done: function () { log("rover", "Arrived next to the object"); },
       detail: function () { return toGo().toFixed(1) + " m to go"; },
-      status: function () { return "Rover is driving to the object · " + toGo().toFixed(1) + " m"; } },
+      status: function () { return "Rover is driving to the object \u00b7 " + toGo().toFixed(1) + " m"; } },
 
-    { robot: "rover", title: "Rover camera confirms it", secs: "confirm", hold: true,
-      start: function () {
-        S.flags.from = { x: D.x, y: D.y, z: D.z };
-        log("rover", "Looking at the object with the camera");
-        log("scout", "Out of the rover's way, flying back to the pad");
-      },
+    { robot: "rover", title: "Rover camera confirms it", secs: "confirm",
+      start: function () { log("rover", "Looking at the object with the camera"); },
       update: function (p) {
-        var f = Math.min(1, p / .7), e = ease(f);                // fly home, then land
-        D.x = lerp(S.flags.from.x, CFG.pad.x, e); D.y = lerp(S.flags.from.y, CFG.pad.y, e);
-        D.z = p < .7 ? lerp(S.flags.from.z, CFG.altitude * .6, e) : CFG.altitude * .6 * (1 - ease((p - .7) / .3));
-        if (p > .45 && !S.flags.confirmed) { S.flags.confirmed = true; confirmFinding(); log("vision", "Confirmed by the rover camera: " + OBJ.name.toLowerCase()); }
+        if (p > .5 && !S.flags.confirmed) { S.flags.confirmed = true; confirmFinding(); log("vision", "Confirmed by the rover camera: " + OBJ.name.toLowerCase()); }
       },
-      done: function () { D.z = 0; log("scout", "Landed on the pad"); },
-      detail: function () { return S.flags.confirmed ? "Confirmed, scout landing" : "Checking the camera image"; },
+      detail: function () { return S.flags.confirmed ? "Confirmed" : "Checking the camera image"; },
       status: "Rover is checking the object" }
   ];
-  function laneAt(d) {                                          // segment 1 = pad to first lane, then lane 1, turn, lane 2, turn, ...
-    for (var i = 1; i < SCAN.pts.length; i++) if (d < SCAN.cum[i]) return i % 2 ? 0 : i / 2;
-    return SC.lanes;
+  function zoneAt(p) {                                          // "field A" / "field B" under a point, or ""
+    for (var i = 0; i < CFG.zones.length; i++) {
+      var z = CFG.zones[i], r = z.rect;
+      if (z.kind === "field" && p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3]) return z.name.replace("Field", "field");
+    }
+    return "";
   }
-  function coverage() { return Math.round(Math.max(0, S.scanD - TRANSIT) / (SCAN.len - TRANSIT) * 100); }
   function toGo() { return Math.max(0, dist(R, OBJ) - CFG.standoff); }
 
   /* ------------------------------------------------------------ map */
@@ -514,6 +512,8 @@
     var pat = sv("pattern", { id: "dots", width: 25, height: 25, patternUnits: "userSpaceOnUse" }, defs);
     sv("circle", { cx: 12.5, cy: 12.5, r: 1.1, fill: "var(--map-dot)" }, pat);
     sv("rect", { x: 0, y: 0, width: "100%", height: "100%", fill: "url(#dots)" }, m);
+    var hatch = sv("pattern", { id: "hatch", width: 12, height: 12, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+    sv("line", { x1: 0, y1: 0, x2: 0, y2: 12, stroke: "var(--crit)", "stroke-width": 1.4, opacity: .3 }, hatch);
 
     var F = CFG.field;
     sv("rect", { x: X(F.x0), y: Y(F.y1), width: (F.x1 - F.x0) * K, height: (F.y1 - F.y0) * K, rx: 6,
@@ -522,24 +522,22 @@
     ft.textContent = (F.x1 - F.x0) + " × " + (F.y1 - F.y0) + " m";
 
     CFG.zones.forEach(function (z) {
-      var r = z.rect, base = z.kind === "base";
+      var r = z.rect, look = {
+        field: { fill: "var(--zone-field)", stroke: "var(--zone-field-line)", dash: "none" },
+        disposal: { fill: "url(#hatch)", stroke: "color-mix(in srgb, var(--crit) 70%, transparent)", dash: "none" }
+      }[z.kind];
       sv("rect", { x: X(r[0]), y: Y(r[3]), width: (r[2] - r[0]) * K, height: (r[3] - r[1]) * K, rx: 4,
-                   fill: base ? "var(--zone-base)" : "var(--zone-field)", stroke: base ? "var(--zone-base-line)" : "var(--zone-field-line)",
-                   "stroke-dasharray": base ? "5 5" : "none", "stroke-width": 1.3 }, m);
+                   fill: look.fill, stroke: look.stroke, "stroke-dasharray": look.dash, "stroke-width": 1.3 }, m);
       var t = sv("text", { x: X(r[0]) + 10, y: Y(r[3]) + 20, class: "zone-label" }, m);
       t.textContent = z.name;
     });
 
-    el.plan = sv("polyline", { points: ptsAttr(SCAN.pts), fill: "none", stroke: "var(--scout)", "stroke-width": 1.5,
-                               "stroke-dasharray": "4 6", style: "opacity:0;transition:opacity .8s" }, m);
-    el.swath = sv("polyline", { points: "", fill: "none", stroke: "var(--scout)", "stroke-width": laneGap * K, "stroke-linecap": "square",
-                                "stroke-linejoin": "miter", opacity: .14 }, m);
+    el.swath = sv("polyline", { points: "", fill: "none", stroke: "var(--scout)", "stroke-width": CFG.swath * K, "stroke-linecap": "round", opacity: .14 }, m);
     el.route = sv("polyline", { points: ptsAttr(ROVER_PATH.pts), fill: "none", stroke: "var(--rover)", "stroke-width": 2,
                                 "stroke-dasharray": "6 6", style: "opacity:0;transition:opacity .6s" }, m);
 
     var pad = sv("g", { transform: "translate(" + X(CFG.pad.x) + "," + Y(CFG.pad.y) + ")" }, m);
     sv("circle", { r: 17, fill: "none", stroke: "var(--scout)", "stroke-width": 1.5, "stroke-dasharray": "3 4", opacity: .8 }, pad);
-    var pt = sv("text", { y: -24, "text-anchor": "middle", class: "small" }, pad); pt.textContent = "launch pad";
 
     el.obj = sv("g", { transform: "translate(" + X(OBJ.x) + "," + Y(OBJ.y) + ")", style: "opacity:0;transition:opacity .4s" }, m);
     sv("circle", { r: 16, fill: "none", stroke: "var(--target)", "stroke-width": 2, class: "obj-ring" }, el.obj);
@@ -554,7 +552,7 @@
     sv("rect", { x: -19, y: 10, width: 9, height: 5, rx: 2, fill: "var(--rover)", opacity: .7 }, rb);
     sv("rect", { x: 10, y: -15, width: 9, height: 5, rx: 2, fill: "var(--rover)", opacity: .7 }, rb);
     sv("rect", { x: 10, y: 10, width: 9, height: 5, rx: 2, fill: "var(--rover)", opacity: .7 }, rb);
-    sv("rect", { x: 2, y: -2.5, width: 22, height: 5, rx: 2, fill: "var(--rover)", stroke: "var(--map-bg)", "stroke-width": 1.2 }, rb);
+    sv("rect", { x: 2, y: -2.5, width: 17, height: 5, rx: 2, fill: "var(--rover)", stroke: "var(--map-bg)", "stroke-width": 1.2 }, rb);
     sv("circle", { r: 8, fill: "var(--rover)", stroke: "var(--map-bg)", "stroke-width": 1.6 }, rb);
 
     el.shadow = sv("ellipse", { rx: 14, ry: 14, fill: "var(--ink)", opacity: .12 }, m);
@@ -657,7 +655,7 @@
   function complete() {
     S.phase = "done";
     log("ai", "Mission complete");
-    $("summary-text").textContent = "Done in " + fmtTime(S.clock) + ". Scanned " + coverage() + "% of the field, found 1 object, confirmed it with the rover camera.";
+    $("summary-text").textContent = "Done in " + fmtTime(S.clock) + " \u00b7 1 object found and confirmed";
     $("summary").hidden = false;
     $("again").hidden = false;
   }
@@ -676,7 +674,7 @@
     ["finding", "summary", "banner", "mission-card", "again"].forEach(function (id) { $(id).hidden = true; });
     $("cmd-card").hidden = false; $("cmd").value = ""; $("hint").textContent = "";
     $("f-chip").querySelector("use").setAttribute("href", "#i-eye");
-    el.plan.style.opacity = 0; el.route.style.opacity = 0; el.obj.style.opacity = 0;
+    el.route.style.opacity = 0; el.obj.style.opacity = 0;
     STEPS.forEach(function (st) { st.li.className = "step"; setMark(st.li, ""); st.li.querySelector(".d").textContent = ""; st.li.querySelector(".bar").style.width = "0"; });
     $("go").disabled = false;
   }
@@ -691,7 +689,7 @@
       st.update && st.update(S.t / d0);
       if (S.t >= d0 && !(S.manual && st.hold)) finishStep();
       if (D.z > .05) S.bat.scout = Math.max(5, S.bat.scout - dt * .12);
-      if (S.i === 4) S.bat.rover = Math.max(5, S.bat.rover - dt * .05);
+      if (STEPS[S.i].secs === "drive") S.bat.rover = Math.max(5, S.bat.rover - dt * .05);
     }
     if (S.phase === "stopped" && S.flags.landT < 1) {
       S.flags.landT = Math.min(1, S.flags.landT + dt);
@@ -709,7 +707,7 @@
     el.shadow.setAttribute("rx", (14 + D.z * 6).toFixed(1)); el.shadow.setAttribute("ry", (10 + D.z * 3).toFixed(1));
     el.shadow.setAttribute("opacity", (D.z > .02 ? .16 - D.z * .06 : 0).toFixed(3));
     el.rover.setAttribute("transform", "translate(" + X(R.x).toFixed(1) + "," + Y(R.y).toFixed(1) + ") rotate(" + (-R.yaw).toFixed(1) + ")");
-    el.swath.setAttribute("points", ptsAttr(slice(SCAN, TRANSIT, Math.max(TRANSIT, S.scanD))));
+    el.swath.setAttribute("points", ptsAttr(slice(SCAN, 0, S.scanD)));
 
     var bar = $("status-bar"), text;
     if (S.phase === "boot") text = "Connecting to the fleet";
@@ -725,9 +723,9 @@
     STEPS.forEach(function (st, i) {
       var state = S.phase === "boot" || S.phase === "ready" || i > S.i ? "" : i < S.i || S.phase === "done" ? "done" : S.phase === "stopped" ? "" : "run";
       var cls = "step" + (state ? " " + state : "");
-      if (st.li.className !== cls) st.li.className = cls;
+      if (st.li.className !== cls) { st.li.className = cls; if (state === "run") st.li.scrollIntoView({ block: "nearest" }); }
       setMark(st.li, state);
-      var d = st.li.querySelector(".d"), txt = state === "run" ? st.detail(S.t / dur(st)) : state === "done" && st.secs === "scan" ? "Covered " + coverage() + "%, found it" : "";
+      var d = st.li.querySelector(".d"), txt = state === "run" ? st.detail(S.t / dur(st)) : state === "done" && st.secs === "scan" ? "Found it after " + S.scanD.toFixed(1) + " m" : "";
       if (state === "done" && !txt) txt = "Done";
       if (d.textContent !== txt) d.textContent = txt;
       st.li.querySelector(".bar").style.width = state === "run" ? (S.t / dur(st) * 100).toFixed(1) + "%" : "0";

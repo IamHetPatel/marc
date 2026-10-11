@@ -83,6 +83,7 @@
     drone_goto: "Fly to a point", drone_scan: "Scan the area", drone_dock: "Dock on the rover",
     rover_goto: "Drive to", rover_search: "Look around", rover_approach: "Close in with the camera",
     rover_inspect: "Inspect it", rover_grip: "Gripper", rover_check_grip: "Check the grip", rover_arm: "Arm",
+    rover_pick_up: "Pick it up",
     rover_drive: "Drive", rover_snapshot: "Take a photo", request_authorization: "Ask the operator",
     ask_human: "Ask the operator", report: "Report back", camera_locate: "Find it from above"
   };
@@ -117,7 +118,7 @@
     drone_search: "search", drone_scan: "search", camera_locate: "search", drone_takeoff: "search", drone_goto: "search",
     drone_mark: "mark", drone_home: "reach", drone_land: "reach", drone_dock: "reach", rover_search: "reach",
     rover_drive: "reach", rover_snapshot: "reach", rover_inspect: "inspect", request_authorization: "authorize",
-    ask_human: "authorize", rover_approach: "pickup", rover_check_grip: "pickup", report: "report"
+    ask_human: "authorize", rover_approach: "pickup", rover_check_grip: "pickup", rover_pick_up: "pickup", report: "report"
   };
   function phaseKeys(steps) {
     var delivering = false;

@@ -268,13 +268,18 @@ def test_floor_scenarios_run_without_ai_in_map_mode(name, make_ctrl, monkeypatch
     assert any("Map mode" in m["text"] for m in st["messages"]) or "inspect" not in str(load_scenario(name).plan)
 
 
-def test_floor_mark_and_drive_puts_the_rover_on_the_spot(make_ctrl, monkeypatch):
-    """standoff 0: the rover ends on the marked point (within goto_tolerance_m), not 0.6 m short."""
+def test_floor_mark_and_drive_parks_the_rover_ready_to_grip(make_ctrl, monkeypatch):
+    """gap 0.18: the rover parks grip_reach_m + 0.18 m from the spot, facing it."""
     from manager.tools import distance
     monkeypatch.setenv("ARENA", FLOOR)
     c = make_ctrl(rover_rider="target")
     c.load_scenario("floor_mark_and_drive")
     st = answer_questions(c)
     assert st["mission"]["status"] == "done", st["mission"]["error"]
+    import math
+    a = c.base_ctx.arena
     f, p = st["findings"][0], c.base_ctx.loc.rover_pose()
-    assert distance(p.x, p.y, f["x"], f["y"]) <= c.base_ctx.arena.goto_tolerance_m + 0.02
+    assert abs(distance(p.x, p.y, f["x"], f["y"]) - (a.grip_reach_m + 0.18)) <= 2 * a.goto_tolerance_m
+    bearing = (math.degrees(math.atan2(f["y"] - p.y, f["x"] - p.x)) - p.yaw + 180) % 360 - 180
+    assert abs(bearing) <= 10                                     # facing it: the gripper points at the spot
+    assert [s["status"] for s in st["plan"]] == ["done"] * 4  # and the scout went home after

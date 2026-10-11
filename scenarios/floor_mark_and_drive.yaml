@@ -10,6 +10,6 @@ targets:
   - {id: t1, kind: hostile_drone, source: fixed, x: -0.2, y: 0.0}          # WRECK
 plan:
   - {robot: drone, action: drone_mark, target: "-0.2,0.0", why: "Scout marks the crash site"}          # WRECK
-  - {robot: rover, action: rover_goto, target: "$finding.f1", standoff: 0.0, why: "Rover drives onto the marked spot"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", gap: 0.18, why: "Rover parks with its gripper 18 cm short of the spot, facing it"}
   - {robot: drone, action: drone_home, why: "Scout flies back to its launch pad and lands, out of the rover's way"}
   - {robot: manager, action: report, text: "Crash site reached.", why: "Tell the operator"}

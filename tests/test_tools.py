@@ -1,5 +1,6 @@
 """Tool-level behaviour: validation, safety gates, the drone/rover separation rule, localization."""
 import dataclasses
+import math
 
 import pytest
 
@@ -232,3 +233,41 @@ def test_real_rover_does_not_trust_a_mock_drone_pose(cfg):
     _, rover, drone, clock, _ = build_mock(arena, cfg)
     loc = Localization(rover, drone, arena, clock, use_drone_fix=False)
     assert loc.rover_pose().source == "start_cross+odometry"
+
+
+def test_pick_up_does_the_whole_grab_from_in_front_of_the_object(ctx):
+    """The operator drove up to it: one action lowers, opens, closes in, grips, lifts and checks."""
+    scan_and_recover(ctx)
+    assert go(ctx, "rover_goto", target="$finding.f1")["arrived"]
+    assert go(ctx, "rover_search", target="crashed drone")["found"]
+    start = list(ctx.world.rover)
+    r = go(ctx, "rover_pick_up", target="crashed drone")
+    assert r["stage"] == "authorize" and r["blocked"] == "authorization"     # identified as hostile: the gate holds
+    assert r["category"] == "hostile_drone" and ctx.world.rover[:2] == start[:2]   # stopped before moving
+    r = go(ctx, "rover_pick_up", target="crashed drone", confirm=True)       # the operator's explicit yes
+    assert r["ok"] and r["holding"] is True and r["stage"] == "done"
+    assert succeeded("rover_pick_up", r) and ctx.store.findings[0].status == "recovered"
+
+
+def test_pick_up_with_nothing_in_front_stops_before_moving(ctx):
+    r = go(ctx, "rover_pick_up", target="banana")
+    assert r["ok"] is False and r["stage"] == "look" and ctx.world.rover[:2] == [ctx.arena.home.x, ctx.arena.home.y]
+
+
+def test_goto_that_stalls_close_settles_and_far_away_fails_instead_of_hanging(ctx, monkeypatch):
+    """The real EP ignores very slow speed commands: the rover stops a few cm short. That must end the step."""
+    tol = ctx.arena.goto_tolerance_m
+    real_speed = ctx.rover.speed
+    gx, gy = ctx.arena.home.x + 1.0, ctx.arena.home.y
+
+    def sticky(x, y, z, t):                         # wheels stop turning once within 1.5 x tolerance
+        p = ctx.loc.rover_pose()
+        return {"ok": True} if math.hypot(gx - p.x, gy - p.y) < 1.5 * tol else real_speed(x, y, z, t)
+    monkeypatch.setattr(ctx.rover, "speed", sticky)
+    r = go(ctx, "rover_goto", x=gx, y=gy)
+    assert r["arrived"] is True and r["error_m"] <= 2 * tol
+
+    monkeypatch.setattr(ctx.rover, "speed", lambda x, y, z, t: {"ok": True})   # blocked: does not move at all
+    t0 = ctx.clock.now()
+    r = go(ctx, "rover_goto", x=gx - 1.0, y=gy)
+    assert r["arrived"] is False and "stuck" in r["error"] and ctx.clock.now() - t0 < 10

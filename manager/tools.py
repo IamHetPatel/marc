@@ -32,6 +32,8 @@ APPROACH_MAX_S = 60.0
 SEARCH_TURNS = 8                # 8 x 45 deg = one full circle
 GOTO_TIMEOUT_S = 60.0
 GOTO_GAIN = 0.8
+GOTO_MIN_SPEED = 0.08           # m/s: slower commands do not turn the EP's wheels, so it would stall short of the goal
+GOTO_STALL_S = 4.0              # no progress (1 cm) for this long: settle if close enough, else report it as stuck
 INSPECT_FINDING_RADIUS_M = 1.5
 UNFLAGGED_AHEAD_M = 0.6         # rover_inspect registers an unflagged object this far in front of the rover
 GRIP_GATE_RADIUS_M = 1.0        # a hazardous, unauthorized finding this close blocks closing the gripper
@@ -494,10 +496,11 @@ def rover_drive(ctx: Ctx, args: dict) -> dict:
 @action("rover", needs=(("target",), ("x", "y")), ok_key="arrived", moves_rover=True, fault="goto")
 def rover_goto(ctx: Ctx, args: dict) -> dict:
     """Drive the rover to a place using metric navigation (within arena.goto_tolerance_m). For a drone finding it
-    stops 0.6 m short so the camera can see the object, unless standoff says otherwise (standoff 0 = drive right
-    onto the spot, for missions that only ask to go there). Does not identify anything.
+    stops 0.6 m short so the camera can see the object, unless standoff says otherwise (rover centre to object;
+    0 = drive right onto the spot), and then turns to face it. Does not identify anything.
     Args: target = "$finding.<id>" | "$zone.<name>" | "$home", or x, y in metres (Lighthouse frame);
-    standoff = metres to stop short of a finding (optional).
+    standoff = rover centre to the finding in metres (optional), or gap = gripper fingertips to the finding in
+    metres (optional; e.g. 0.18 parks ready for rover_pick_up).
     Returns: {arrived, pose, pose_source, error_m}."""
     loc = _location(ctx, args)
     if (msg := ctx.safety.rover_target(loc["x"], loc["y"])):
@@ -506,14 +509,20 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
     gx, gy = loc["x"], loc["y"]
     if loc["kind"] == "finding":
         d = distance(pose.x, pose.y, gx, gy)
-        standoff = max(0.0, float(args["standoff"])) if args.get("standoff") is not None \
-            else ctx.arena.finding_standoff_m
+        if args.get("gap") is not None:
+            standoff = ctx.arena.grip_reach_m + max(0.0, float(args["gap"]))
+        elif args.get("standoff") is not None:
+            standoff = max(0.0, float(args["standoff"]))
+        else:
+            standoff = ctx.arena.finding_standoff_m
         if d > standoff:
             k = (d - standoff) / d
             gx, gy = pose.x + (gx - pose.x) * k, pose.y + (gy - pose.y) * k
         else:
             gx, gy = pose.x, pose.y
+    tol = ctx.arena.goto_tolerance_m
     t_end = ctx.clock.now() + GOTO_TIMEOUT_S
+    best, t_best = float("inf"), ctx.clock.now()
     while True:
         if ctx.cancelled():
             ctx.rover.stop()
@@ -522,9 +531,18 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         err = distance(pose.x, pose.y, gx, gy)
         info = {"pose": pose.as_dict(), "pose_source": pose.source, "pose_age_s": round(pose.age_s, 1),
                 "error_m": round(err, 2)}
-        if err <= ctx.arena.goto_tolerance_m:
+        if err < best - 0.01:
+            best, t_best = err, ctx.clock.now()
+        settled = ctx.clock.now() - t_best > GOTO_STALL_S
+        if err <= tol or (settled and err <= 2 * tol):
             ctx.rover.stop()
+            if loc["kind"] == "finding" and distance(pose.x, pose.y, loc["x"], loc["y"]) > 0.05:
+                info["turned_deg"] = _face(ctx, loc["x"], loc["y"])
             return {"ok": True, "arrived": True, **info}
+        if settled:
+            ctx.rover.stop()
+            return _err(f"stuck {err:.2f} m from the goal for {GOTO_STALL_S:g} s: something blocks the rover, or "
+                        "its position is wrong", arrived=False, **info)
         if not ctx.arena.view_rect().contains(pose.x, pose.y, margin=0.1):
             ctx.rover.stop()                     # a wrong anchor makes the rover chase a goal it can never reach
             return _err("the rover's position left the mapped area; its position is probably wrong. Re-anchor it "
@@ -535,9 +553,27 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
             return _err("timed out before arriving", arrived=False, **info)
         c, s = math.cos(math.radians(pose.yaw)), math.sin(math.radians(pose.yaw))
         dx, dy = gx - pose.x, gy - pose.y
-        vx, vy, _ = ctx.safety.clamp_speed(GOTO_GAIN * (c * dx + s * dy), GOTO_GAIN * (-s * dx + c * dy))
+        vx, vy = GOTO_GAIN * (c * dx + s * dy), GOTO_GAIN * (-s * dx + c * dy)
+        if 0 < math.hypot(vx, vy) < GOTO_MIN_SPEED:
+            k = GOTO_MIN_SPEED / math.hypot(vx, vy)
+            vx, vy = vx * k, vy * k
+        vx, vy, _ = ctx.safety.clamp_speed(vx, vy)
         ctx.rover.speed(vx, vy, 0.0, 0.3)
         ctx.clock.sleep(0.1)
+
+
+def _face(ctx: Ctx, x: float, y: float) -> float:
+    """Turn in place until the rover's front (the gripper) points at (x, y). Returns the total turn in degrees."""
+    total = 0.0
+    for _ in range(3):                                   # clamp_move turns at most 90 degrees per call
+        pose = ctx.loc.rover_pose()
+        bearing = (math.degrees(math.atan2(y - pose.y, x - pose.x)) - pose.yaw + 180.0) % 360.0 - 180.0
+        if abs(bearing) <= 5.0 or ctx.cancelled():
+            break
+        turn = ctx.safety.clamp_move(0.0, 0.0, bearing)[2]
+        ctx.rover.drive(0.0, 0.0, turn)
+        total += turn
+    return round(total, 1)
 
 
 @action("rover", needs=(("target",),), ok_key="found", moves_rover=True, fault="search")
@@ -643,6 +679,56 @@ def rover_check_grip(ctx: Ctx, args: dict) -> dict:
         if (f := ctx.store.nearest_finding(pose.x, pose.y, RECOVERED_RADIUS_M)) is not None:
             ctx.store.update_finding(f.id, status="recovered")
     return {"ok": True, **r, "image_id": image_id}
+
+
+@action("rover", ok_key="holding", moves_rover=True, fault="grip")
+def rover_pick_up(ctx: Ctx, args: dict) -> dict:
+    """Pick up the object in front of the rover in one go: check the camera sees it, identify it (rover_inspect),
+    lower the arm, open the gripper, creep up on the camera until it is in reach, close, lift, and check the grip.
+    For an operator who drove the rover up to the object by hand. A hazardous object stops before the arm moves
+    until the operator confirms (manual control: confirm=true, the "Pick up (confirm)" button).
+    Args: target = what to pick up, in words (optional, default "object in front of the robot").
+    Returns: {holding, stage, label, category, reason, image_id}; stage says where it stopped if it did not finish."""
+    target = args.get("target") or "object in front of the robot"
+    jpeg = ctx.rover.snapshot()
+    image_id = ctx.store.add_image(jpeg)
+    if ctx.perception.point(jpeg, target) is None:
+        return _err(f"no {target} seen in front of the camera", holding=False, stage="look", image_id=image_id)
+    seen = rover_inspect(ctx, {"question": f"What is the {target}? Is it a drone, and is it ours or hostile?"})
+    what = {k: seen.get(k) for k in ("label", "category", "hazardous", "finding_id")}
+    if seen.get("label") == "nothing":
+        return _err("the camera sees nothing to pick up", holding=False, stage="look", image_id=seen.get("image_id"))
+    if args.get("confirm") is True and seen.get("finding_id"):
+        ctx.store.update_finding(seen["finding_id"], authorized=True)     # the operator's explicit yes
+        ctx.store.say("system", f"Operator confirmed the pick-up of {seen['finding_id']} ({seen.get('label')})")
+    if (msg := _authorization_gate(ctx)):
+        return _err(f"{msg}. Camera: {seen.get('answer')} Press 'Pick up (confirm)' to go ahead.", holding=False,
+                    stage="authorize", blocked="authorization", image_id=seen.get("image_id"), **what)
+    ctx.store.say("system", f"Rover: picking up the {target}: arm down, gripper open")
+    for step in (lambda: ctx.rover.arm("pick"), lambda: ctx.rover.grip("open")):
+        if ctx.cancelled():
+            return _err("cancelled", holding=False, stage="prepare")
+        r = _norm(step())
+        if not r.get("ok"):
+            return _err(f"could not prepare the arm/gripper: {r.get('error')}", holding=False, stage="prepare")
+    r = rover_approach(ctx, {"target": target})
+    if not r.get("in_reach"):
+        return _err(f"approach: {r.get('error')}", holding=False, stage="approach", image_id=r.get("image_id"))
+    if (msg := _authorization_gate(ctx)):
+        return _err(msg, holding=False, stage="authorize", blocked="authorization")
+    for stage, step in (("grip", lambda: ctx.rover.grip("close")), ("lift", lambda: ctx.rover.arm("carry"))):
+        if ctx.cancelled():
+            return _err("cancelled", holding=False, stage=stage)
+        r = _norm(step())
+        if not r.get("ok"):
+            return _err(f"{stage} failed: {r.get('error')}", holding=False, stage=stage)
+    r = rover_check_grip(ctx, {})
+    if not r.get("holding"):
+        return _err(f"lifted, but the camera sees nothing in the gripper ({r.get('reason')})", holding=False,
+                    stage="check", image_id=r.get("image_id"))
+    ctx.store.say("system", f"Rover: holding the {target}")
+    return {"ok": True, "holding": True, "stage": "done", "reason": r.get("reason"), "image_id": r.get("image_id"),
+            **what}
 
 
 @action("rover", needs=(("mode",),), choices={"mode": ("pick", "carry", "home")})

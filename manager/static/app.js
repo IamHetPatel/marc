@@ -91,7 +91,7 @@
   /* The use cases on the start screen. Scenario files not listed here still show, with their own title. */
   var USECASE = {
     floor_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Mark it, check it with the camera, and carry it to the disposal zone after a person says yes." },
-    floor_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches the whole field on its own; the rover goes to what it finds." },
+    floor_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches the whole field on its own, marks what it finds and flies back to its pad." },
     floor_mark_and_drive: { title: "Mark and drive", icon: "rover", text: "The scout marks the crash site, the rover drives there. The first thing to get working." },
     t3_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Find it, check it with the camera, and carry it to the disposal zone after a person says yes." },
     own_drone_home: { title: "Our own drone went down", icon: "scout", text: "Find our crashed scout and bring it back to the base. No authorization needed: it is ours." },

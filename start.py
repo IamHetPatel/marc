@@ -195,6 +195,8 @@ def plan(args) -> tuple:
     if arena:
         env["ARENA"] = str(ROOT / arena)
     needs = ["mothership"]
+    if drone == "radio" and "ROVER_RIDER" not in os.environ:
+        env["ROVER_RIDER"] = "target"          # the target Crazyflie (...04) rides on the rover and is its position
     if args.camera:
         env["OVERHEAD_CAM"] = args.camera
         needs.append("camera")

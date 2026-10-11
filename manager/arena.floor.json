@@ -9,7 +9,11 @@
     "x1": 2.9,
     "y1": 1.9
   },
-  "launch_pad": null,
+  "launch_pad": {
+    "x": -1.84,
+    "y": 0.92,
+    "yaw": 0.0
+  },
   "bounds": {
     "x0": -2.5,
     "y0": -1.5,
@@ -17,10 +21,10 @@
     "y1": 1.5
   },
   "drone_cage": {
-    "x0": -2.2,
-    "y0": -1.2,
-    "x1": 2.2,
-    "y1": 1.2,
+    "x0": -1.66,
+    "y0": -0.68,
+    "x1": 1.96,
+    "y1": 1.18,
     "z_max": 1.2
   },
   "home": {
@@ -45,34 +49,34 @@
     },
     "disposal": {
       "rect": [
-        -2.5,
-        -1.5,
-        -1.5,
-        -0.3
+        -1.6,
+        -0.68,
+        -0.9,
+        0.0
       ]
     },
     "field_a": {
       "rect": [
-        -1.3,
-        -1.5,
+        -0.8,
+        -0.68,
         0.6,
-        1.5
+        1.18
       ]
     },
     "field_b": {
       "rect": [
         0.6,
-        -1.5,
-        2.5,
-        1.5
+        -0.68,
+        1.96,
+        1.18
       ]
     },
     "test_zone": {
       "rect": [
-        -2.2,
-        -1.2,
-        2.2,
-        1.2
+        -1.66,
+        -0.68,
+        1.96,
+        1.18
       ]
     }
   },
@@ -128,5 +132,7 @@
       "grippable": true,
       "color": "#c0392b"
     }
-  ]
+  ],
+  "_cage_note": "drone_cage measured 2026-10-11: largest x/y-aligned box inside the drone's Lighthouse reception corners (2.208,-0.683) (1.96,1.18 from 2026-10-10) (-2.551,1.195) (-1.633,-0.755); no inset. Same as drone_server.py DEFAULT_CAGE.",
+  "_zones_note": "Zones fitted 2026-10-11 to the Lighthouse reception area (= drone_cage): with ROVER_RIDER=target the rover's position comes from the riding Crazyflie, so everything the rover drives to must be where Lighthouse reaches. disposal moved from the bottom-left corner (no reception there: the -x side of the reception area slants) to x -1.6..-0.9, y -0.68..0; field_a = x -0.8..0.6, field_b = x 0.6..1.96, both y -0.68..1.18. base keeps the rover start (-2.1, 0.9), which is inside reception at that y. launch_pad = the scout's pad measured with the cage."
 }

@@ -197,6 +197,8 @@ def plan(args) -> tuple:
     needs = ["mothership"]
     if drone == "radio" and "ROVER_RIDER" not in os.environ:
         env["ROVER_RIDER"] = "target"          # the target Crazyflie (...04) rides on the rover and is its position
+    if args.no_ai:
+        os.environ["AI"] = env["AI"] = "off"   # no Gemini at all: built-in plans, camera steps answer from the map
     if args.camera:
         env["OVERHEAD_CAM"] = args.camera
         needs.append("camera")
@@ -223,8 +225,8 @@ def summary(pieces, rover_url: str, drone_url: str):
                      f"{'   (mock radio)' if h and h.get('mock') else ''}")
     else:
         lines.append("Drone       simulated inside the mothership")
-    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-        lines.append("AI          no GEMINI_API_KEY: built-in plans and manual control only")
+    if os.getenv("AI") == "off" or not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
+        lines.append("AI          off: built-in plans; the rover camera steps steer on positions (map mode)")
     for line in lines:
         say("start", line)
     say("start", "Ctrl-C stops the rover, lands the scout and shuts everything down.")
@@ -244,6 +246,7 @@ def main():
     ap.add_argument("--camera")
     ap.add_argument("--arena", help="arena file (default: floor arena for sim/floor, mock arena for demo)")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--no-ai", action="store_true", help="ignore GEMINI_API_KEY: built-in plans, camera steps from the map")
     args = ap.parse_args()
 
     if sys.version_info < (3, 10):

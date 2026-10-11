@@ -11,6 +11,7 @@ Env:
   CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: DEFAULT_CAGE, measured on the floor)
   GEOFENCE=0  stop enforcing the cage (x/y limits, lost-tracking check); on by default
   MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y" (default 1.0,0.3)
+              and the scout starts on MOCK_PAD="x,y" (default: the cage's x0,y0 corner)
 """
 import math
 import os
@@ -40,11 +41,11 @@ PORT = int(os.getenv("PORT", "8001"))
 #   (2.208, -0.683)  (-1.633, -0.755)  (-2.551, 1.195)  and +x+y = (1.96, 1.18) from the 2026-10-10 floor walk,
 #   because today's reading there, (1.763, -4.05, z -0.107), was a tracking dropout.
 # These are reception limits, not the walls, so no inset. The cage is the largest x/y-aligned box inside that
-# four-sided shape (its -x side slants, so the pad at (-1.84, 0.92) sits 0.18 m outside; takeoff allows 0.3 m).
+# four-sided shape (its -x side slants, so the pad at (-1.84, 0.92) sits 0.18 m outside; takeoff is allowed anywhere tracking is good).
 # z_max is not measured yet. Keep equal to manager/arena.floor.json drone_cage (tests/test_integration.py checks).
 DEFAULT_CAGE = "-1.66,-0.68,1.96,1.18,1.2"
 SANE_MARGIN_M = 1.5  # a pose this far outside the cage means Lighthouse tracking is lost, not a real position
-TAKEOFF_MARGIN_M = 0.3  # takeoff is a vertical lift, so it may start up to the measured walls (the cage is inset 0.3 m)
+SETTLE_S = 1.5         # hover over the pad this long before descending, so go_to's lag and overshoot die out
 
 
 def _load_cage():
@@ -212,10 +213,12 @@ class Scout:
         self.gen_lock = threading.Lock()
         if not MOCK:
             from cflib.utils.reset_estimator import reset_estimator
-            reset_estimator(link.scf)
+            self._reset_estimator = lambda: reset_estimator(link.scf)
+            self._reset_estimator()
             self.hlc = link.scf.cf.high_level_commander
         else:
-            self.link.pose.update(x=CAGE["x0"], y=CAGE["y0"])
+            px, py = (float(v) for v in os.getenv("MOCK_PAD", f"{CAGE['x0']},{CAGE['y0']}").split(","))
+            self.link.pose.update(x=px, y=py)
             self.link.battery_v = 4.0
 
     def _cur_gen(self):
@@ -251,11 +254,15 @@ class Scout:
             return f"battery {self.link.battery_v} V is below {MIN_BATTERY_V} V"
         if not (snap := self.pose())["ok"]:
             return f"refusing takeoff: {snap['error']}"
-        if (err := _outside_cage(snap["x"], snap["y"], margin=TAKEOFF_MARGIN_M)):
-            return f"refusing takeoff: {err} (takeoff allows {TAKEOFF_MARGIN_M} m more)"
+        # Takeoff is a vertical lift: allowed wherever tracking is good (pose() already refuses a lost pose), so a
+        # drone that landed just outside the cage can still lift and fly back in. go_to targets stay inside it.
+        if (err := _outside_cage(snap["x"], snap["y"])):
+            print(f"Taking off outside the cage ({err}); the next go_to brings it back in")
         if self.takeoff_pos is None or self.state == "docked":    # home = the pad, not wherever /land left it
             self.takeoff_pos = {"x": round(self.link.pose["x"], 3), "y": round(self.link.pose["y"], 3)}
             print(f"Home (dock target) set to {self.takeoff_pos}")
+        if not MOCK:
+            self._reset_estimator()          # re-converge the Kalman filter on the floor: landings knock it off
         print(f"Taking off to z={z}")
         if MOCK:
             self.link.pose["z"] = z
@@ -366,6 +373,14 @@ class Scout:
             for z in (cruise_z, DOCK_Z):              # across at height, then descend over the pad
                 if (err := self._goto(tx, ty, z, gen)):
                     return {"ok": False, "docked": False, "error": err}
+                if not self._wait(SETTLE_S / (MOCK_TIME_SCALE if MOCK else 1), gen):
+                    return {"ok": False, "docked": False, "error": "interrupted by land"}
+                if not MOCK:                          # one correction: re-aim at the pad from where it settled
+                    self.hlc.go_to(tx, ty, z, 0.0, 1.0, relative=False)
+                    if not self._wait(1.2, gen):
+                        return {"ok": False, "docked": False, "error": "interrupted by land"}
+            p = self.link.pose
+            print(f"Over the pad: off by {math.dist((p['x'], p['y']), (tx, ty)) * 100:.0f} cm, landing")
             self._send_land(duration=DOCK_Z / 0.15)
             if not self._wait(DOCK_Z / 0.15 + 0.3, gen):
                 return {"ok": False, "docked": False, "error": "interrupted by land"}

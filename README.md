@@ -25,8 +25,15 @@ scout before shutting down. Plan and status of the integration: [docs/integratio
 **Floor demo with the riding Crazyflie (the way we run it now)**
 
 ```bash
-.venv/bin/python start.py floor --no-ai     # no Gemini: built-in plans, camera steps steer on positions ("map mode")
+.venv/bin/python start.py floor --rover 192.168.2.1 --no-ai   # EP in direct Wi-Fi mode; no Gemini ("map mode")
 ```
+
+The EP is most stable in **direct Wi-Fi mode**: the laptop joins the EP's own Wi-Fi and the EP is always 192.168.2.1.
+That laptop is then off the hotspot, so run everything on it (Crazyradio in its USB port, dashboard on
+http://localhost:8002/). Other laptops cannot open the dashboard and a webcam on another laptop is out of reach,
+unless this laptop also has a second network (phone USB tethering or a USB Ethernet adapter). There is no internet
+either, which `--no-ai` does not need. If the Crazyflies' radio drops while the EP streams, switch the EP's Wi-Fi to
+5.8 GHz in the RoboMaster app (the Crazyradio uses 2.48 GHz).
 
 1. The Crazyflie `...04` rides on the rover's back-right corner; with a radio drone `start.py` sets `ROVER_RIDER=target`.
    Its Lighthouse pose is then the rover's ONLY position source: no wheel odometry, start cross or anchor is mixed

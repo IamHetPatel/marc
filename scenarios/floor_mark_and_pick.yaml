@@ -1,0 +1,21 @@
+# FLOOR (manager/arena.floor.json): floor_mark_and_drive, then the rover grabs what is in front of it, brings it back to
+# where it started and lets go. The first three steps are exactly floor_mark_and_drive's.
+# The wreck is a dummy object at a FIXED spot (the target Crazyflie rides on the rover, ROVER_RIDER=target). Before the
+# run: put the wreck down, hold the landed scout over it, read curl "localhost:8001/pose", and write that x, y below in
+# BOTH places marked WRECK. No camera reasoning and no arm moves (the arm presets in rover/robot_server.py are not tuned
+# yet): only the gripper.
+name: floor_mark_and_pick
+arena: floor
+title: "Mark and pick (floor)"
+mission: "Mark the crash site with the scout, drive the rover there, grip the object, bring it back to the start and let go."
+targets:
+  - {id: t1, kind: hostile_drone, source: fixed, x: -0.2, y: 0.0}          # WRECK
+plan:
+  - {robot: drone, action: drone_mark, target: "-0.2,0.0", why: "Scout marks the crash site"}          # WRECK
+  - {robot: rover, action: rover_grip, mode: open, why: "Open the gripper so it can close on the object"}
+  - {robot: rover, action: rover_goto, target: "$finding.f1", gap: 0.18, why: "Rover parks with its gripper 18 cm short of the spot, facing it"}
+  - {robot: drone, action: drone_home, why: "Scout flies back to its launch pad and lands, out of the rover's way"}
+  - {robot: rover, action: rover_grip, mode: close, why: "Close the gripper on the object"}
+  - {robot: rover, action: rover_goto, target: "$start", why: "Bring it back to where the rover started"}
+  - {robot: rover, action: rover_grip, mode: open, why: "Let go of it"}
+  - {robot: manager, action: report, text: "Object picked up and brought back to the start.", why: "Tell the operator"}

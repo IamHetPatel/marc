@@ -336,6 +336,12 @@ class Controller:
         cancel = self._cancel
         run_ctx = dataclasses.replace(self.base_ctx, cancel=cancel, ask=self._ask,
                                       drone_out=self._drone_in_air())
+        if self.store.rover_start is None:           # "$start": where the rover was when the mission began
+            try:
+                p = self.base_ctx.loc.rover_pose()
+                self.store.rover_start = {"x": p.x, "y": p.y, "yaw": p.yaw}
+            except RobotError:
+                pass
         self.store.set_status("running", pending_question=None)
         self.store.say("system", "Plan approved. Running.")
         executor = Executor(run_ctx, self.supervisor, self.budget,

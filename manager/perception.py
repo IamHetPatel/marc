@@ -8,7 +8,7 @@ from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel
 
-from .adapters.mock import GRIP_DIST_M, HORIZON
+from .adapters.mock import HORIZON
 from .llm import LLMError
 from .scenarios import DEFAULT_LABEL
 
@@ -156,10 +156,10 @@ class MapPerception:
     through the same camera model the mock uses, so search, approach and the grip check still steer the real rover,
     on coordinates. For a floor demo without GEMINI_API_KEY; every answer says it came from the map, not the image."""
 
-    REACH_M = 0.45               # a target this close in front of the rover counts as held after the grip closes
+    metric = True                # rover_approach lines the gripper up on positions instead of pixels
 
-    def __init__(self, camera):
-        self.camera = camera
+    def __init__(self, arena):
+        self.arena, self.camera = arena, arena.camera
         self.loc = self.detector = self.store = None      # bound by runtime.build_ctx
 
     def bind(self, ctx):
@@ -174,6 +174,13 @@ class MapPerception:
         if not out and self.store is not None:
             out = [{"x": f.x, "y": f.y, "kind": "unknown"} for f in self.store.findings if f.status != "recovered"]
         return out
+
+    def nearest(self, pose) -> Optional[dict]:
+        """The believed object nearest to the rover's gripper: {x, y, kind}, or None."""
+        reach = self.arena.rover.grip_reach_m
+        gx = pose.x + reach * math.cos(math.radians(pose.yaw))
+        gy = pose.y + reach * math.sin(math.radians(pose.yaw))
+        return min(self._objects(), key=lambda o: math.hypot(o["x"] - gx, o["y"] - gy), default=None)
 
     def _ahead(self):
         """[(obj, forward_m, left_m)] in the rover frame, nearest first."""
@@ -192,7 +199,7 @@ class MapPerception:
             if f < 0.05 or abs(math.atan2(l, f)) > half:
                 continue
             horizon = cam.height * HORIZON
-            row = min(cam.height, horizon + (cam.grip_line_row - horizon) * GRIP_DIST_M / f)
+            row = min(cam.height, horizon + (cam.grip_line_row - horizon) * self.arena.rover.grip_reach_m / f)
             col = cam.width / 2 - (l / f) / math.tan(half) * (cam.width / 2)
             return {"col": col, "row": row, "label": f"{DEFAULT_LABEL.get(o['kind'], 'object')} (map)"}
         return None
@@ -213,7 +220,8 @@ class MapPerception:
                 "hazardous": hazardous, "reason": f"{reason} (from the scenario, not the camera)"}
 
     def holding(self, jpeg):
-        near = [(f, l) for _, f, l in self._ahead() if -0.05 <= f <= self.REACH_M and abs(l) <= 0.2]
+        reach = self.arena.rover.grip_reach_m
+        near = [(f, l) for _, f, l in self._ahead() if abs(f - reach) <= 0.12 and abs(l) <= 0.1]
         return {"holding": bool(near),
                 "reason": ("map mode: the object was in gripper reach when it closed" if near
                            else "map mode: no marked object within gripper reach") + " (camera not analysed)"}
@@ -223,10 +231,10 @@ def make_perception(cfg, arena, llm, world=None):
     mode = cfg.perception
     if mode == "auto":
         if world is None and llm is None:
-            return MapPerception(arena.camera)      # real rover, no key: steer on positions so the demo still runs
+            return MapPerception(arena)      # real rover, no key: steer on positions so the demo still runs
         mode = "mock" if world is not None else "gemini"
     if mode == "map":
-        return MapPerception(arena.camera)
+        return MapPerception(arena)
     if mode == "none":
         return NoPerception("PERCEPTION=none: the camera steps are switched off")
     if mode == "mock":

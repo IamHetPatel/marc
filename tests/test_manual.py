@@ -117,7 +117,7 @@ def test_rover_drive_is_clamped_and_cannot_leave_the_arena(ctx):
     run_action(ctx, "rover_drive", {"x": 5.0, "y": 0.0, "z": 0.0})
     assert ctx.world.rover[0] == pytest.approx(ctx.arena.home.x + 1.0, abs=0.05)         # 1 m cap per call
     r = run_action(ctx, "rover_drive", {"x": -1.0, "y": -1.0, "z": 0.0})
-    assert r["ok"] is False and "outside the arena" in r["error"]
+    assert r["ok"] is False and "off the map" in r["error"]
 
 
 def test_rover_drive_obeys_the_separation_rule(ctx):

@@ -260,7 +260,7 @@ def test_the_report_page_is_readable_escaped_and_carries_the_photo(make_ctrl):
 def test_floor_scenarios_run_without_ai_in_map_mode(name, make_ctrl, monkeypatch):
     """The no-AI floor demo: search, approach, triage and the grip check all steer on positions."""
     monkeypatch.setenv("ARENA", str(Path(__file__).resolve().parent.parent / "manager" / "arena.floor.json"))
-    c = make_ctrl(perception="map")
+    c = make_ctrl(perception="map", rover_rider="target")
     c.load_scenario(name)
     wait_status(c, "awaiting_approval")
     st = answer_questions(c)

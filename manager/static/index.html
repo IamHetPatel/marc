@@ -285,8 +285,12 @@
           </div>
           <div class="group">
             <h3><svg class="ic"><use href="#i-target"/></svg>Rover position</h3>
-            <p class="hint small">The scout knows exactly where it is; the rover counts wheel turns. Line them up before a run.</p>
-            <div class="btn-row">
+            <p class="hint small" id="pos-hint">The scout knows exactly where it is; the rover counts wheel turns. Line them up before a run.</p>
+            <div class="btn-row" id="rider-row" hidden>
+              <button type="button" class="btn" id="r-calibrate" title="Once after mounting the riding Crazyflie: the rover drives 25 cm forward, turns half a circle and back, and measures where the Crazyflie sits and how it is turned">Calibrate rider</button>
+              <span class="hint small" id="rider-info"></span>
+            </div>
+            <div class="btn-row" id="anchor-row">
               <button type="button" class="btn" id="r-anchor-scout" title="The scout is landed right behind the rover (its pad in the start corner), nose pointing the way the rover faces. Click: the rover gets its true Lighthouse position and heading from it">Anchor: scout behind rover</button>
               <button type="button" class="btn" id="r-anchor-target" title="Same, with the target Crazyflie placed right behind the rover">Anchor: target behind rover</button>
               <button type="button" class="btn" id="r-home" title="Click after placing the rover on the taped start cross">Rover is on the start cross</button>

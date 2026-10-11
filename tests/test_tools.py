@@ -97,7 +97,7 @@ def test_zone_scan_is_clipped_to_the_cage(ctx):
 
 def test_rover_geofence(ctx):
     r = go(ctx, "rover_goto", x=9.0, y=9.0)
-    assert r["ok"] is False and "outside the arena" in r["error"]
+    assert r["ok"] is False and "off the map" in r["error"]
 
 
 def test_low_battery_blocks_scan(ctx):

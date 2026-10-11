@@ -13,7 +13,7 @@ from .llm import LLM, make_llm
 from .controller import Controller
 from .detector import SimDetector
 from .llm import LLMError
-from .localization import Localization
+from .localization import MOUNT_FILE, Localization, RiderLocalization
 from .models import load_arena
 from .perception import make_perception
 from .planner import Planner
@@ -45,8 +45,12 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     # the mock rover on the scaled simulated clock).
     trust_drone_fix = cfg.dock_mode and (mock_rover or not mock_drone)
     overhead_fix = overhead is not None and not mock_rover and cfg.overhead_cam != "mock"
-    loc = Localization(rover, drone, arena, clock, use_drone_fix=trust_drone_fix,
-                       overhead=overhead if overhead_fix else None, rider=cfg.rover_rider)
+    if cfg.rover_rider:                         # the riding Crazyflie is the ONLY position source
+        loc = RiderLocalization(rover, drone, arena, clock, rider=cfg.rover_rider,
+                                mount_file=None if mock_rover else MOUNT_FILE)
+    else:
+        loc = Localization(rover, drone, arena, clock, use_drone_fix=trust_drone_fix,
+                           overhead=overhead if overhead_fix else None, rider=cfg.rover_rider)
     perception = make_perception(cfg, arena, llm, world if mock_rover else None)
     safety = Safety(cfg, arena, store, rover, drone)
     ctx = Ctx(cfg=cfg, arena=arena, store=store, rover=rover, drone=drone, loc=loc, perception=perception,

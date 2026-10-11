@@ -243,6 +243,8 @@ class Controller:
         with self._lock:
             if self.store.status in ("running", "replanning"):
                 raise Conflict("stop the mission before moving the rover's position")
+            if getattr(self.base_ctx.loc, "absolute", False):
+                raise Conflict("the riding Crazyflie gives the rover's position; there is nothing to reset")
             self.base_ctx.loc.reanchor_home()
             self.store.say("system", "Rover position reset to the start cross.")
 
@@ -252,6 +254,8 @@ class Controller:
         and drone in the same frame."""
         if cf not in ("target", "scout"):
             raise ValueError("cf must be 'target' or 'scout'")
+        if getattr(self.base_ctx.loc, "absolute", False):
+            raise Conflict("the riding Crazyflie gives the rover's position; anchoring is not needed")
         with self._lock:
             if self.store.status in ("running", "replanning"):
                 raise Conflict("stop the mission before moving the rover's position")
@@ -419,8 +423,12 @@ class Monitor(threading.Thread):
         ctx, store = self.ctrl.base_ctx, self.ctrl.store
         try:
             p = ctx.loc.rover_pose()
+            rider = getattr(ctx.loc, "status", None)
+            if rider is not None:
+                ctx.rover.pose()                # the rider says where it is; this says the EP itself still answers
             store.merge_robot("rover", online=True, pose=p.as_dict(), pose_source=p.source,
-                              pose_age_s=round(p.age_s, 1))
+                              pose_age_s=round(min(p.age_s, 999.0), 1), pose_ok=p.ok,
+                              **({"rider": rider()} if rider is not None else {}))
             self.fails["rover"] = 0
         except RobotError:
             self._fail("rover")

@@ -110,7 +110,8 @@ def _norm(res: dict) -> dict:
 
 # ---------------------------------------------------------------- references and validation
 def resolve_location(ctx: Ctx, value) -> dict:
-    """'$finding.f1' | '$zone.exit' | '$home' | 'x,y' | {x, y} -> {x, y, rect, kind}. Raises UnresolvedRef."""
+    """'$finding.f1' | '$zone.exit' | '$home' | '$start' | 'x,y' | {x, y} -> {x, y, rect, kind}. Raises UnresolvedRef.
+    $start = where the rover was when the mission started."""
     if isinstance(value, dict):
         return {"x": value["x"], "y": value["y"], "rect": None, "kind": "point"}
     ref = str(value).strip()
@@ -118,6 +119,11 @@ def resolve_location(ctx: Ctx, value) -> dict:
     if name == "home":
         h = ctx.arena.home
         return {"x": h.x, "y": h.y, "rect": None, "kind": "home"}
+    if name == "start":
+        s = ctx.store.rover_start
+        if s is None:
+            raise UnresolvedRef("start", ref)
+        return {"x": s["x"], "y": s["y"], "rect": None, "kind": "start"}
     fid = name.split(".", 1)[1] if name.startswith("finding.") else (name if re.fullmatch(r"f\d+", name) else None)
     if fid:
         f = ctx.store.get_finding(fid)

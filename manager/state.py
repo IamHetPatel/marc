@@ -41,6 +41,7 @@ class Store:
             self.current_step: Optional[str] = None
             self.last_image_id: Optional[str] = None
             self.manual: Optional[dict] = None
+            self.rover_start: Optional[dict] = None  # where the rover was when the mission started ("$start")
             self._finding_counter = 0
             self._step_counter = 0
             if not hasattr(self, "mentor_present"):

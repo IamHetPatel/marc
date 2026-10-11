@@ -283,3 +283,26 @@ def test_floor_mark_and_drive_parks_the_rover_ready_to_grip(make_ctrl, monkeypat
     bearing = (math.degrees(math.atan2(f["y"] - p.y, f["x"] - p.x)) - p.yaw + 180) % 360 - 180
     assert abs(bearing) <= 10                                     # facing it: the gripper points at the spot
     assert [s["status"] for s in st["plan"]] == ["done"] * 4  # and the scout went home after
+
+
+def test_floor_mark_and_pick_grabs_the_object_and_brings_it_back_to_the_start(make_ctrl, monkeypatch):
+    from manager.tools import distance
+    monkeypatch.setenv("ARENA", FLOOR)
+    c = make_ctrl(rover_rider="target")
+    start = c.base_ctx.loc.rover_pose()
+    c.load_scenario("floor_mark_and_pick")
+    st = answer_questions(c)
+    assert st["mission"]["status"] == "done", st["mission"]["error"]
+    assert [s["status"] for s in st["plan"]] == ["done"] * 8
+    goto = next(s for s in st["plan"] if s["action"] == "rover_goto")
+    assert goto["result"]["arrived"]
+    end = c.base_ctx.loc.rover_pose()
+    assert distance(end.x, end.y, start.x, start.y) <= 2 * c.base_ctx.arena.goto_tolerance_m
+
+
+def test_start_is_where_the_rover_was_when_the_mission_began(ctx):
+    from manager.tools import UnresolvedRef, resolve_location
+    with pytest.raises(UnresolvedRef):
+        resolve_location(ctx, "$start")
+    ctx.store.rover_start = {"x": 0.4, "y": -0.2, "yaw": 0.0}
+    assert resolve_location(ctx, "$start")["x"] == 0.4

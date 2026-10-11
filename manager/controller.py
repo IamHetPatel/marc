@@ -470,8 +470,9 @@ class Monitor(threading.Thread):
             store.merge_robot(name, health=_brief_health(name, h))
 
     def _fail(self, name: str):
-        self.ctrl.store.merge_robot(name, online=False)
         self.fails[name] += 1
+        if self.fails[name] >= 2:                # one missed poll (0.5 s) on a busy Wi-Fi is not "offline"
+            self.ctrl.store.merge_robot(name, online=False)
         if self.fails[name] >= self.ctrl.cfg.watchdog_fails and self.ctrl.store.status in ("running", "replanning"):
             self.fails[name] = 0
             self.ctrl.stop(reason=f"Watchdog: the {name} stopped answering")

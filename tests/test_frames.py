@@ -129,3 +129,31 @@ def test_with_a_rider_the_rover_follows_lighthouse_even_from_a_wrong_start(rider
 def test_with_the_target_riding_the_detector_ignores_it_and_the_map_has_no_truth(rider_ctx, make_ctrl):
     assert rider_ctx.detector.live_ok is False
     assert all(t["x"] != rider_ctx.world.rover[0] for t in rider_ctx.detector.truth())
+
+
+def test_with_a_rider_a_scout_docked_on_its_own_pad_does_not_move_the_rover(rider_ctx, monkeypatch):
+    """On the floor the scout docks on its pad, not on the rover: its 'docked' pose must not become the rover's."""
+    c = rider_ctx
+    c.world.rover = [1.0, 0.5, 0.0]
+    real = c.drone.pose
+
+    def pose(cf="scout"):
+        if cf == "scout":
+            return {"ok": True, "state": "docked", "x": -1.8, "y": 0.9, "z": 0.0, "yaw": 0.0}
+        return real(cf)
+    monkeypatch.setattr(c.drone, "pose", pose)
+    for _ in range(3):
+        p = c.loc.rover_pose()
+        assert p.source == "lighthouse_rider" and abs(p.x - 1.0) < 0.05 and abs(p.y - 0.5) < 0.05
+        c.clock.sleep(0.4)
+
+
+def test_a_fresh_rider_read_is_the_rover_pose_with_no_odometry_added(rider_ctx, monkeypatch):
+    c = rider_ctx
+    c.world.rover = [1.0, 0.5, 0.0]
+    c.loc.rover_pose()
+    real = c.rover.pose
+    monkeypatch.setattr(c.rover, "pose", lambda: {**real(), "x": real()["x"] + 5.0})   # odometry jumps 5 m
+    c.clock.sleep(0.2)
+    p = c.loc.rover_pose()
+    assert p.source == "lighthouse_rider" and abs(p.x - 1.0) < 0.05

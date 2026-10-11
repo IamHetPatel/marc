@@ -50,6 +50,7 @@ HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("PORT", "8000"))
 MOCK = os.getenv("MOCK") == "1"
 REPLY_TIMEOUT_S = float(os.getenv("ROVER_REPLY_TIMEOUT_S", "1.5"))   # EP replies take ~30-70 ms; 1.5 s = something is wrong
+LINK_DEAD_S = float(os.getenv("ROVER_LINK_DEAD_S", "6"))   # drop the link only after this long without any reply
 WELL_KNOWN = ("192.168.2.1", "192.168.42.2")   # the EP's own Wi-Fi (direct/AP mode) and its USB (RNDIS) address
 VIDEO = os.getenv("ROVER_VIDEO", "1") != "0"   # 0: no camera stream (less Wi-Fi load; use it to rule video out)
 SDK_Y_SIGN = float(os.getenv("SDK_Y_SIGN", "-1"))
@@ -98,8 +99,10 @@ class SdkLink:
     the reason, so a dead battery or a Wi-Fi drop shows up on the dashboard instead of stalling every call.
 
     Stability rules, learned on the real EP (2026-10-10: connect / time out / "EP ignored 'command'" every second):
-      * a slow reply is NOT a dead link. One timeout keeps the socket (the late reply is drained before the next
-        command); only MAX_TIMEOUTS in a row, or a real socket error, drop it. Redialling after every hiccup made it
+      * a slow reply is NOT a dead link. Timeouts keep the socket (the late reply is drained before the next
+        command); only MAX_TIMEOUTS in a row AND dead_s without a single reply, or a real socket error, drop it.
+        A busy hotspot stalls for a few seconds now and then (2026-10-11); redialling through that is what made the
+        link look dead. Redialling after every hiccup made it
         worse: the EP still held the old session and ignored the new one.
       * before closing, send "quit" so the EP releases its SDK session; if it still ignores "command", back off
         (RETRY_S doubling up to RETRY_MAX_S) instead of hammering it every second.
@@ -113,7 +116,9 @@ class SdkLink:
     LOCK_WAIT_S = 2.0
     SPLIT_WAIT_S = 0.03
 
-    def __init__(self, host: str, port: int = SDK_PORT, timeout: float = REPLY_TIMEOUT_S):
+    def __init__(self, host: str, port: int = SDK_PORT, timeout: float = REPLY_TIMEOUT_S, dead_s: float = LINK_DEAD_S):
+        self.dead_s = dead_s
+        self._last_reply = time.monotonic()
         self.auto = host == "auto"
         self.address = None if self.auto else host
         self.port, self.timeout = port, timeout
@@ -166,15 +171,16 @@ class SdkLink:
             except socket.timeout:
                 self.stats["timeouts"] += 1
                 self._timeouts_in_row += 1
-                if self._timeouts_in_row >= self.MAX_TIMEOUTS:
-                    self.error = f"{self._timeouts_in_row} replies in a row timed out"
+                silent = time.monotonic() - self._last_reply
+                if self._timeouts_in_row >= self.MAX_TIMEOUTS and silent >= self.dead_s:
+                    self.error = f"{self._timeouts_in_row} replies in a row timed out, nothing for {silent:.0f} s"
                     self._drop()
                 raise TimeoutError(f"EP did not answer {command!r} within {self.timeout:g} s") from None
             except OSError as e:
                 self.error = str(e) or type(e).__name__
                 self._drop()
                 raise
-            self._timeouts_in_row = 0
+            self._timeouts_in_row, self._last_reply = 0, time.monotonic()
             rtt = round((time.monotonic() - t0) * 1000)
             self.stats["commands"] += 1
             self.stats["rtt_ms"], self.stats["rtt_ms_max"] = rtt, max(self.stats["rtt_ms_max"], rtt)
@@ -197,6 +203,7 @@ class SdkLink:
                 else:
                     with self._lock:
                         self._sock, self.error, self._timeouts_in_row = sock, None, 0
+                        self._last_reply = time.monotonic()
                     self.stats["connects"] += 1
                     print(f"EP connected at {self.label}")
                     said, wait = None, self.RETRY_S
@@ -349,7 +356,10 @@ def find_eps(listen_s: float = 1.5) -> list:
     if me == "localhost":
         return []
     prefix = me.rsplit(".", 1)[0]
-    hosts = [f"{prefix}.{i}" for i in range(1, 255) if f"{prefix}.{i}" != me]
+    # the /24 around this laptop, plus every neighbour it has already seen: on a big venue network (/16) the EP is
+    # rarely in the laptop's own /24
+    hosts = list(dict.fromkeys([f"{prefix}.{i}" for i in range(1, 255)] + _arp_neighbours()))
+    hosts = [h for h in hosts if h != me]
     with ThreadPoolExecutor(max_workers=64) as pool:
         return [h for h, ok in zip(hosts, pool.map(is_ep, hosts)) if ok]
 
@@ -517,8 +527,9 @@ class Rover:
         serves a position from before the link went bad."""
         try:
             return self.link.cmd(command)
-        except OSError:
-            self._pose = (None, -1e9)
+        except OSError as e:
+            if not self.link.connected or not isinstance(e, (TimeoutError, LinkBusy)):
+                self._pose = (None, -1e9)   # the link is gone: no stale positions; a slow reply keeps the cache
             raise
 
     def _ok(self, command: str):
@@ -619,13 +630,18 @@ class Rover:
         return _relative(p, self.origin)
 
     POSE_MAX_AGE_S = 0.5
+    POSE_HOLD_S = 3.0       # a live read that stalls may answer with a pose up to this old (age_s says how old)
 
     def pose(self, reset: bool = False) -> dict:
         """From the poller's cache when it is fresh; else one live read (and that error if the EP is away)."""
         p, t = self._pose
         age = time.monotonic() - t
         if p is None or age > self.POSE_MAX_AGE_S or reset:
-            p, age = self._abs_pose(), 0.0
+            try:
+                p, age = self._abs_pose(), 0.0
+            except (TimeoutError, LinkBusy):
+                if reset or p is None or age > self.POSE_HOLD_S or not self.link.connected:
+                    raise
         if reset:
             self.origin = p
         return {"ok": True, **self._rel(p), "age_s": round(age, 2)}
@@ -943,6 +959,20 @@ class Handler(BaseHTTPRequestHandler):
                 last = seq
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+
+def _arp_neighbours() -> list:
+    """IPv4 addresses in this machine's ARP cache (macOS/Linux `arp -an`, or /proc/net/arp); [] if unavailable."""
+    try:
+        text = Path("/proc/net/arp").read_text()
+    except OSError:
+        try:
+            import subprocess
+            text = subprocess.run(["arp", "-an"], capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+    return [ip for ip in re.findall(r"\b(\d+\.\d+\.\d+\.\d+)\b", text)
+            if not ip.endswith((".255", ".0")) and not ip.startswith(("224.", "239.", "169.254."))]
 
 
 def _lan_ip() -> str:

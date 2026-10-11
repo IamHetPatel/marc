@@ -1,6 +1,8 @@
 """Rover pose in the Lighthouse frame = latest absolute fix + wheel odometry since (plan §7).
 
 Sources, best first (every pose carries `source` and `age_s`):
+  lighthouse_rider      a Crazyflie rides on the rover (ROVER_RIDER): its Lighthouse pose minus plate_offset IS the
+                        rover's pose, read on every call; odometry is used only to bridge a missed read
   docked_drone          drone sits on the plate, its Lighthouse pose IS the rover's pose (minus plate offset)
   fix+odometry          drone is out: last absolute fix, carried forward by odometry
   start_cross+odometry  never had a fix: assume the rover started on the home cross
@@ -16,6 +18,7 @@ from .adapters.base import RobotError
 from .models import Arena, Pose
 
 DRONE_POLL_S = 0.3
+RIDER_POLL_S = 0.1          # the drone server logs the rider at 10 Hz; the goto loop asks every 0.1 s
 
 
 def _rot(x: float, y: float, deg: float):
@@ -49,6 +52,7 @@ class LocalizedPose:
 
 class Localization:
     RIDER_FRESH_S = 1.0
+    RIDER_DIRECT_S = 0.25   # a rider read this fresh is the rover's pose as is; older ones are bridged by odometry
 
     def __init__(self, rover, drone, arena: Arena, clock, use_drone_fix: bool = True, overhead=None,
                  rider: str = ""):
@@ -82,7 +86,8 @@ class Localization:
     def _rover_pose(self) -> LocalizedPose:
         odom = self.rover.pose()
         now = self.clock.now()
-        if self.use_drone_fix and now - self._drone_t >= DRONE_POLL_S:
+        # With a rider the scout never sits on the rover: "docked" then means "on its own pad", not "on the plate"
+        if self.use_drone_fix and not self.rider and now - self._drone_t >= DRONE_POLL_S:
             self._drone_t = now
             try:
                 dp = self.drone.pose()
@@ -94,8 +99,12 @@ class Localization:
                 yaw = dp["yaw"] - (po.yaw or 0.0)
                 ox, oy = _rot(po.x, po.y, yaw)
                 self.fix = Fix(Pose(x=dp["x"] - ox, y=dp["y"] - oy, yaw=yaw), odom, now, "docked_drone")
-        if self.rider and now - self._rider_t >= DRONE_POLL_S:
+        if self.rider and now - self._rider_t >= RIDER_POLL_S:
             self._rider_fix(odom, now)
+        f = self.fix
+        if self.rider and f is not None and f.source == "lighthouse_rider" and now - f.t <= self.RIDER_DIRECT_S:
+            # a fresh rider read: the drone's position alone, no odometry added
+            return LocalizedPose(f.lh.x, f.lh.y, _wrap(f.lh.yaw), "lighthouse_rider", now - f.t)
         if self.overhead is not None and not self._docked:
             self._overhead_fix(odom, now)
         if self.fix is None:

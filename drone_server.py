@@ -81,7 +81,7 @@ def _sane(p):
 class Link:
     """One Crazyflie radio link with a 10 Hz state log."""
 
-    def __init__(self, uri: str, with_zrange: bool):
+    def __init__(self, uri: str, with_zrange: bool, connect: bool = True):
         self.uri = uri
         self.pose = {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0}
         self.battery_v = None
@@ -91,8 +91,30 @@ class Link:
         self.scf = None
         self.error = None
         self.lighthouse = {}      # deck + base-station bitmaps from the firmware, for /health and error messages
-        if not MOCK:
+        if not MOCK and connect:
             self._connect(with_zrange)
+
+    def keep_connected(self, check_s: float = 3.0, retry_s: float = 10.0, lost_s: float = 5.0):
+        """Background loop for a link that must not need a server restart (the rider ...04): connect when the drone
+        appears, reconnect when its log stops for lost_s (battery swap, out of range)."""
+        while True:
+            age = self.age_s()
+            if self.scf is None or age is None or age > lost_s:
+                if self.scf is not None:
+                    print(f"{self.uri}: no data for {age}s, reconnecting")
+                    try:
+                        self.scf.close_link()
+                    except Exception:                  # noqa: BLE001
+                        pass
+                    self.scf, self.last_log = None, 0.0
+                try:
+                    self._connect(False)
+                    self.error = None
+                except Exception as e:                 # noqa: BLE001  keep trying; /health shows the reason
+                    self.error = str(e).split(". Check")[0]
+                    self.scf = None
+            time.sleep(check_s if self.scf is not None else retry_s)   # failed rounds share the radio with the
+                                                                       # flying scout: keep them rare
 
     def _connect(self, with_zrange):
         from cflib.crazyflie import Crazyflie
@@ -192,7 +214,9 @@ class Link:
         if not MOCK:
             age = self.age_s()
             out["age_s"] = age
-            if age is None or age > POSE_STALE_S:
+            if age is None and self.scf is None:
+                out.update(ok=False, error=f"{self.uri} not connected yet, retrying ({self.error or 'connecting'})")
+            elif age is None or age > POSE_STALE_S:
                 out.update(ok=False, error=f"no pose from {self.uri} for {age}s")
             elif not _sane(self.pose):
                 hint = self.lighthouse_report().get("hint", "check the deck can see the base stations; "
@@ -444,12 +468,9 @@ if MOCK:
     tx, ty = (float(v) for v in os.getenv("MOCK_TARGET", "1.0,0.3").split(","))
     target.pose.update(x=tx, y=ty)
     target.battery_v = 4.0
-elif TARGET_URI:
-    try:
-        target = Link(TARGET_URI, with_zrange=False)
-    except Exception as e:                    # noqa: BLE001  the scout must still fly without the target
-        print(f"Target {TARGET_URI} not reachable: {e}")
-        target = None
+elif TARGET_URI:                              # connects in the background and keeps retrying: switching the
+    target = Link(TARGET_URI, with_zrange=False, connect=False)   # rider on later needs no server restart
+    threading.Thread(target=target.keep_connected, daemon=True, name="target-link").start()
 print(f"Geofence: {CAGE}" if GEOFENCE else "Geofence: OFF (x/y unchecked; set GEOFENCE=1 to enforce)")
 
 

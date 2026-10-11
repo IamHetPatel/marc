@@ -30,10 +30,8 @@ APPROACH_STEP_M = 0.12          # forward step per iteration of the visual-servo
 APPROACH_MAX_ITERS = 15
 APPROACH_MAX_S = 60.0
 SEARCH_TURNS = 8                # 8 x 45 deg = one full circle
-GOTO_TOLERANCE_M = 0.15
 GOTO_TIMEOUT_S = 60.0
 GOTO_GAIN = 0.8
-FINDING_STANDOFF_M = 0.6        # stop this far short of a drone finding so the camera can see it
 INSPECT_FINDING_RADIUS_M = 1.5
 UNFLAGGED_AHEAD_M = 0.6         # rover_inspect registers an unflagged object this far in front of the rover
 GRIP_GATE_RADIUS_M = 1.0        # a hazardous, unauthorized finding this close blocks closing the gripper
@@ -495,9 +493,11 @@ def rover_drive(ctx: Ctx, args: dict) -> dict:
 
 @action("rover", needs=(("target",), ("x", "y")), ok_key="arrived", moves_rover=True, fault="goto")
 def rover_goto(ctx: Ctx, args: dict) -> dict:
-    """Drive the rover to a place using metric navigation (about +-15 cm). For a drone finding it stops
-    0.6 m short so the camera can see the object. Does not identify anything.
-    Args: target = "$finding.<id>" | "$zone.<name>" | "$home", or x, y in metres (Lighthouse frame).
+    """Drive the rover to a place using metric navigation (within arena.goto_tolerance_m). For a drone finding it
+    stops 0.6 m short so the camera can see the object, unless standoff says otherwise (standoff 0 = drive right
+    onto the spot, for missions that only ask to go there). Does not identify anything.
+    Args: target = "$finding.<id>" | "$zone.<name>" | "$home", or x, y in metres (Lighthouse frame);
+    standoff = metres to stop short of a finding (optional).
     Returns: {arrived, pose, pose_source, error_m}."""
     loc = _location(ctx, args)
     if (msg := ctx.safety.rover_target(loc["x"], loc["y"])):
@@ -506,8 +506,10 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
     gx, gy = loc["x"], loc["y"]
     if loc["kind"] == "finding":
         d = distance(pose.x, pose.y, gx, gy)
-        if d > FINDING_STANDOFF_M:
-            k = (d - FINDING_STANDOFF_M) / d
+        standoff = max(0.0, float(args["standoff"])) if args.get("standoff") is not None \
+            else ctx.arena.finding_standoff_m
+        if d > standoff:
+            k = (d - standoff) / d
             gx, gy = pose.x + (gx - pose.x) * k, pose.y + (gy - pose.y) * k
         else:
             gx, gy = pose.x, pose.y
@@ -520,7 +522,7 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         err = distance(pose.x, pose.y, gx, gy)
         info = {"pose": pose.as_dict(), "pose_source": pose.source, "pose_age_s": round(pose.age_s, 1),
                 "error_m": round(err, 2)}
-        if err <= GOTO_TOLERANCE_M:
+        if err <= ctx.arena.goto_tolerance_m:
             ctx.rover.stop()
             return {"ok": True, "arrived": True, **info}
         if not ctx.arena.view_rect().contains(pose.x, pose.y, margin=0.1):

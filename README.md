@@ -132,11 +132,11 @@ Built at a mobile robotics hackathon in Dresden, 10–11 October 2026, by:
 | --- | --- | --- |
 | **Het Patel** | [@IamHetPatel](https://github.com/IamHetPatel) | Mission manager (planning, supervision, safety, robot actions), dashboard, simulator and tests, rover localization |
 | **Viraj Dalsania** | [@Viraj5503](https://github.com/Viraj5503) | Drone server and Crazyflie flight, flight-cage measurement, rover pick-up and mark-and-pick flow |
-| **Aryan Sanjay Nagbanshi** | [@john-debug-masterman](https://github.com/john-debug-masterman) | Rover server on the EP SDK, overhead camera, `start.py` launcher, wiring the robots into the dashboard |
-| **Arshnoor Singh** | | Rover browser control and rover documentation |
-| **Jonathan Daniss** | [@john-debug-masterman](https://github.com/john-debug-masterman) | |
-| **Priyanshu Sankhala** | [@priyanshusankhala](https://github.com/priyanshusankhala) | |
-| **Pankit Brahmkhatri** | [@pxnkit](https://github.com/pxnkit) | |
+| **Aryan Sanjay Nagbanshi** | [@wiseyXD](https://github.com/WiseyXD) | Rover server on the EP SDK, overhead camera, `start.py` launcher, wiring the robots into the dashboard |
+| **Arshnoor Singh** | [@arshactually2](https://github.com/arshactually2)| Rover browser control and rover documentation |
+| **Jonathan Daniss** | [@john-debug-masterman](https://github.com/john-debug-masterman) | 3D printing the drone casing on rover. Object detection using static camera module|
+| **Priyanshu Sankhala** | [@priyanshusankhala](https://github.com/priyanshusankhala) | Worked along in Crazyflie setup and development |
+| **Pankit Brahmkhatri** | [@pxnkit](https://github.com/pxnkit) | Assistance in Drone and Rover Development and working |
 
 How the project came together, day by day: [docs/history](docs/history/README.md).
 

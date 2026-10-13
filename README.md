@@ -1,14 +1,22 @@
-# MARC
+<p align="center">
+  <img src="docs/images/marc-hero.png" alt="A scout drone above a ground rover with a gripper" width="360">
+</p>
 
-**A scout drone and a ground robot that find and recover crashed drones in a field, with a person approving every risky step.**
+<h1 align="center">MARC</h1>
 
-![The MARC dashboard during a recovery: the scout has marked a crashed drone, the rover has driven up and identified it as hostile, and the operator is asked to authorize the pick-up](docs/images/dashboard.jpg)
+<p align="center"><b>M</b>ulti <b>A</b>ccess <b>R</b>obot <b>C</b>ollaboration</p>
+
+<p align="center">A scout drone and a ground robot that find and recover crashed drones in a field,<br>
+with a person approving every risky step.</p>
 
 ## Why
 
-Drones come down in fields: our own after a fault, hostile ones after an attack, some still carrying explosives.
-Today a person walks out to find them. MARC sends robots instead and keeps the person at the screen, where they
-approve the plan and decide whether a hazardous object may be touched.
+In war-affected farmland, drones come down in the fields: hostile ones after an attack, some still carrying
+explosives, and our own after a fault. A drone that costs a few hundred dollars to build can wreck a harvesting
+machine worth far more, and today a farmer walks out to find it. MARC sends robots instead. The person stays at the
+screen, approves the plan and decides whether a hazardous object may be touched.
+
+![The MARC dashboard during a recovery: the scout has marked a crashed drone, the rover has driven up and identified it as hostile, and the operator is asked to authorize the pick-up](docs/images/dashboard.jpg)
 
 ## What happens in a mission
 
@@ -24,6 +32,12 @@ If something changes on the way (nothing found, it turns out to be ours, a step 
 MARC re-plans the remaining steps. **STOP** halts the rover and lands the drone at any moment.
 
 ## How it works
+
+![The operator says "Scan the field"; MARC plans, acts and checks, using an LLM for mission to steps, re-planning and image answers; the scout drone is reached over radio and the rover over Wi-Fi, both on a shared Lighthouse map](docs/images/how-marc-works.png)
+
+**Plan, act, check.** MARC turns the mission into steps, runs them on the robots, and checks each result before going
+on: a step that gets stuck triggers a re-plan, and a camera image becomes an answer (ours, hostile, holding it).
+Under the hood:
 
 ```mermaid
 flowchart LR
@@ -49,6 +63,16 @@ flowchart LR
   minimum distance between a low drone and the rover, the authorization gate on the gripper, a watchdog, and STOP.
 
 More: [architecture and data flow](docs/architecture.md) · [API and robot actions](docs/reference.md)
+
+## Beyond farms
+
+The pattern is the same wherever a place is dangerous to walk into: a drone looks from above, a ground robot does
+the hands-on work, and a person decides.
+
+| Solar cleaning | Fire fighting | Search and rescue |
+| :---: | :---: | :---: |
+| ![A drone surveys a solar farm while a rover cleans the panels](docs/images/usecase-solar-cleaning.png) | ![A drone watches a fire while a rover with a hose puts it out](docs/images/usecase-fire-fighting.png) | ![A drone finds a person in rubble while a rover brings a medical kit](docs/images/usecase-search-and-rescue.png) |
+| The drone finds dirty panels, the rover cleans them | The drone spots the fire, the rover gets close with water | The drone finds a person, the rover brings supplies |
 
 ## Try it without robots
 
@@ -89,8 +113,10 @@ Setup, calibration and the floor checklist: [docs/hardware.md](docs/hardware.md)
 
 ## Status
 
-MARC was built in two days and runs end to end in the simulator. On the real floor the scout flew, marked and
-returned to its pad, and the rover drove to the marked spot and gripped the object. Known limits:
+MARC was built in two days and runs end to end in the simulator. On the real floor, missions started from the
+dashboard flew the scout over the field, marked the find, brought the scout back to its pad and drove the rover to
+the marked spot. The two hardest problems were calibrating the Lighthouse tracking over the field and giving the
+drone and the rover one shared coordinate system ([how we solved them](docs/history/README.md)). Known limits:
 
 - The Crazyflies carry no camera, so the scout's "seeing" is simulated: an object counts as found when the scout
   passes over its known position. An overhead camera module ([manager/overhead.py](manager/overhead.py)) is the
@@ -106,7 +132,7 @@ Built at a mobile robotics hackathon in Dresden, 10–11 October 2026, by:
 | --- | --- | --- |
 | **Het Patel** | [@IamHetPatel](https://github.com/IamHetPatel) | Mission manager (planning, supervision, safety, robot actions), dashboard, simulator and tests, rover localization |
 | **Viraj Dalsania** | [@Viraj5503](https://github.com/Viraj5503) | Drone server and Crazyflie flight, flight-cage measurement, rover pick-up and mark-and-pick flow |
-| **Aryan Sanjay Nagbanshi** | | Rover server on the EP SDK, overhead camera, `start.py` launcher, wiring the robots into the dashboard |
+| **Aryan Sanjay Nagbanshi** | [@john-debug-masterman](https://github.com/john-debug-masterman) | Rover server on the EP SDK, overhead camera, `start.py` launcher, wiring the robots into the dashboard |
 | **Arshnoor Singh** | | Rover browser control and rover documentation |
 | **Jonathan Daniss** | [@john-debug-masterman](https://github.com/john-debug-masterman) | |
 | **Priyanshu Sankhala** | [@priyanshusankhala](https://github.com/priyanshusankhala) | |

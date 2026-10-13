@@ -34,6 +34,12 @@ GOTO_TIMEOUT_S = 60.0
 GOTO_GAIN = 0.8
 GOTO_MIN_SPEED = 0.08           # m/s: slower commands do not turn the EP's wheels, so it would stall short of the goal
 GOTO_STALL_S = 4.0              # no progress (1 cm) for this long: settle if close enough, else report it as stuck
+TURN_GAIN = 1.5                 # deg/s of turn per degree of heading error (map-mode alignment)
+POSE_WAIT_S = 4.0               # no trustworthy position (rider lost): stand still this long before giving up
+ALIGN_TOL_M = 0.02              # rover_approach on the map: the object within 2 cm of the jaws' centre
+ALIGN_MAX_SPEED = 0.12          # m/s, slow and precise for the last metres
+ALIGN_MIN_SPEED = 0.03          # the EP ignores slower commands
+CAL_FWD_M = 0.25                # rover_calibrate_rider drives this far forward (and back)
 INSPECT_FINDING_RADIUS_M = 1.5
 UNFLAGGED_AHEAD_M = 0.6         # rover_inspect registers an unflagged object this far in front of the rover
 GRIP_GATE_RADIUS_M = 1.0        # a hazardous, unauthorized finding this close blocks closing the gripper
@@ -61,6 +67,7 @@ class ActionSpec:
     moves_rover: bool = False
     mentor: bool = False
     fault: Optional[str] = None       # MOCK_FAIL key
+    manual_only: bool = False         # the dashboard's manual control may run it; plans may not
 
     @property
     def doc(self) -> str:
@@ -178,7 +185,7 @@ def validate_step(action_name: str, robot: str, args: dict) -> Optional[str]:
 
 
 def vocabulary_text() -> str:
-    return "\n\n".join(f"{s.name}  (robot: {s.robot})\n{s.doc}" for s in REGISTRY.values())
+    return "\n\n".join(f"{s.name}  (robot: {s.robot})\n{s.doc}" for s in REGISTRY.values() if not s.manual_only)
 
 
 def succeeded(name: str, result: dict) -> bool:
@@ -511,7 +518,9 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
     loc = _location(ctx, args)
     if (msg := ctx.safety.rover_target(loc["x"], loc["y"])):
         return _err(msg, arrived=False)
-    pose = ctx.loc.rover_pose()
+    pose = _trusted_pose(ctx)
+    if pose is None:
+        return _err(_LOST, arrived=False)
     gx, gy = loc["x"], loc["y"]
     if loc["kind"] == "finding":
         d = distance(pose.x, pose.y, gx, gy)
@@ -533,7 +542,9 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         if ctx.cancelled():
             ctx.rover.stop()
             return _err("cancelled", arrived=False)
-        pose = ctx.loc.rover_pose()
+        pose = _trusted_pose(ctx)
+        if pose is None:
+            return _err(_LOST, arrived=False)
         err = distance(pose.x, pose.y, gx, gy)
         info = {"pose": pose.as_dict(), "pose_source": pose.source, "pose_age_s": round(pose.age_s, 1),
                 "error_m": round(err, 2)}
@@ -542,14 +553,15 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         settled = ctx.clock.now() - t_best > GOTO_STALL_S
         if err <= tol or (settled and err <= 2 * tol):
             ctx.rover.stop()
-            if loc["kind"] == "finding" and distance(pose.x, pose.y, loc["x"], loc["y"]) > 0.05:
-                info["turned_deg"] = _face(ctx, loc["x"], loc["y"])
+            if loc["kind"] == "finding" and distance(pose.x, pose.y, loc["x"], loc["y"]) > 0.15:
+                info["turned_deg"] = _face(ctx, loc["x"], loc["y"])     # camera and gripper point at it
+                info["facing_error_deg"] = round(_bearing_to(ctx.loc.rover_pose(), loc["x"], loc["y"]), 1)
             return {"ok": True, "arrived": True, **info}
         if settled:
             ctx.rover.stop()
             return _err(f"stuck {err:.2f} m from the goal for {GOTO_STALL_S:g} s: something blocks the rover, or "
                         "its position is wrong", arrived=False, **info)
-        if not ctx.arena.view_rect().contains(pose.x, pose.y, margin=0.1):
+        if not getattr(ctx.loc, "absolute", False) and not ctx.arena.view_rect().contains(pose.x, pose.y, margin=0.1):
             ctx.rover.stop()                     # a wrong anchor makes the rover chase a goal it can never reach
             return _err("the rover's position left the mapped area; its position is probably wrong. Re-anchor it "
                         "(Manual control: anchor from a Crazyflie, or the start cross) and try again",
@@ -573,13 +585,41 @@ def _face(ctx: Ctx, x: float, y: float) -> float:
     total = 0.0
     for _ in range(3):                                   # clamp_move turns at most 90 degrees per call
         pose = ctx.loc.rover_pose()
-        bearing = (math.degrees(math.atan2(y - pose.y, x - pose.x)) - pose.yaw + 180.0) % 360.0 - 180.0
+        bearing = _bearing_to(pose, x, y)
         if abs(bearing) <= 5.0 or ctx.cancelled():
             break
         turn = ctx.safety.clamp_move(0.0, 0.0, bearing)[2]
         ctx.rover.drive(0.0, 0.0, turn)
         total += turn
     return round(total, 1)
+
+
+_LOST = ("lost the rover's position: the riding Crazyflie has no Lighthouse tracking. Check its LEDs and that the "
+         "base stations can see it, then try again")
+
+
+def _clamp(v: float, cap: float) -> float:
+    return max(-cap, min(cap, v))
+
+
+def _bearing_to(pose, x: float, y: float) -> float:
+    """Degrees the rover must turn (left +) to face (x, y)."""
+    return ((math.degrees(math.atan2(y - pose.y, x - pose.x)) - pose.yaw + 180.0) % 360.0) - 180.0
+
+
+def _trusted_pose(ctx: Ctx):
+    """The rover's pose, or None after waiting POSE_WAIT_S for it to become trustworthy again (stopped meanwhile)."""
+    pose = ctx.loc.rover_pose()
+    if pose.ok:
+        return pose
+    ctx.rover.stop()
+    until = ctx.clock.now() + POSE_WAIT_S
+    while ctx.clock.now() < until and not ctx.cancelled():
+        ctx.clock.sleep(0.2)
+        pose = ctx.loc.rover_pose()
+        if pose.ok:
+            return pose
+    return None
 
 
 @action("rover", needs=(("target",),), ok_key="found", moves_rover=True, fault="search")
@@ -612,6 +652,8 @@ def rover_approach(ctx: Ctx, args: dict) -> dict:
     repeat until it sits on the calibrated grip line (inside gripper reach). Open the gripper first.
     Args: target = what to approach, in words, e.g. "cardboard box".
     Returns: {in_reach, steps, image_id}."""
+    if getattr(ctx.perception, "metric", False):
+        return _align_on_map(ctx)
     target, cam = args["target"], ctx.arena.camera
     steps = lost = 0
     image_id = None
@@ -639,6 +681,124 @@ def rover_approach(ctx: Ctx, args: dict) -> dict:
             ctx.rover.drive(*ctx.safety.clamp_move(APPROACH_STEP_M, 0.0, 0.0))
             steps += 1
     return _err("did not reach the object in time", in_reach=False, steps=steps, image_id=image_id)
+
+
+def _align_on_map(ctx: Ctx) -> dict:
+    """Map mode: drive so the object's known spot ends between the open jaws (arena.rover.grip_reach_m ahead of the
+    rover's centre, on its centre line). Turn to face it first, then close in slowly, strafing out sideways error."""
+    reach = ctx.arena.rover.grip_reach_m
+    t_end = ctx.clock.now() + APPROACH_MAX_S
+    steps = 0
+    while True:
+        if ctx.cancelled():
+            ctx.rover.stop()
+            return _err("cancelled", in_reach=False, steps=steps)
+        pose = _trusted_pose(ctx)
+        if pose is None:
+            return _err(_LOST, in_reach=False, steps=steps)
+        obj = ctx.perception.nearest(pose)
+        if obj is None:
+            return _err("no marked object to line the gripper up with", in_reach=False, steps=steps)
+        c, s = math.cos(math.radians(pose.yaw)), math.sin(math.radians(pose.yaw))
+        dx, dy = obj["x"] - pose.x, obj["y"] - pose.y
+        fwd, left = c * dx + s * dy, -s * dx + c * dy
+        ef, bearing = fwd - reach, math.degrees(math.atan2(left, fwd))
+        if abs(ef) <= ALIGN_TOL_M and abs(left) <= ALIGN_TOL_M:
+            ctx.rover.stop()
+            try:
+                image_id = ctx.store.add_image(ctx.rover.snapshot())
+            except RobotError:
+                image_id = None
+            return {"ok": True, "in_reach": True, "steps": steps, "image_id": image_id,
+                    "error_cm": round(math.hypot(ef, left) * 100, 1), "pose": pose.as_dict()}
+        if ctx.clock.now() > t_end:
+            ctx.rover.stop()
+            return _err(f"could not line up in time ({ef * 100:+.0f} cm ahead, {left * 100:+.0f} cm left)",
+                        in_reach=False, steps=steps)
+        if abs(bearing) > 12.0 and math.hypot(fwd, left) > 0.08:
+            vx = vy = 0.0                                   # face it first
+            wz = _clamp(TURN_GAIN * bearing, 30.0)
+        else:
+            vx = _min_speed(_clamp(1.0 * ef, ALIGN_MAX_SPEED), ef)
+            vy = _min_speed(_clamp(1.0 * left, ALIGN_MAX_SPEED), left)
+            wz = _clamp(1.0 * bearing, 15.0)
+        ctx.rover.speed(vx, vy, wz, 0.3)
+        steps += 1
+        ctx.clock.sleep(0.1)
+
+
+def _min_speed(v: float, err: float) -> float:
+    if abs(err) <= ALIGN_TOL_M:
+        return 0.0
+    return math.copysign(max(abs(v), ALIGN_MIN_SPEED), err)
+
+
+@action("rover", moves_rover=True, manual_only=True)
+def rover_calibrate_rider(ctx: Ctx, args: dict) -> dict:
+    """Measure where the riding Crazyflie sits on the rover and how it is turned, so the rover's position and heading
+    are exact: drive 25 cm forward, turn 180 degrees in two steps, turn back, drive back. Needs about 40 cm clear
+    around the rover. Manual control only. Returns: {mount: {x, y, yaw}}."""
+    loc = ctx.loc
+    if not hasattr(loc, "averaged_cf"):
+        return _err("no riding Crazyflie: start the mothership with ROVER_RIDER=target")
+
+    def cf() -> dict:
+        r = loc.averaged_cf()
+        if r is None:
+            raise RobotError("the riding Crazyflie has no position (Lighthouse tracking?)")
+        return r
+
+    def drive(x, y, z):
+        r = _norm(ctx.rover.drive(x, y, z))
+        if not r.get("ok"):
+            raise RobotError(r.get("error") or "drive failed")
+
+    c0 = cf()
+    drive(CAL_FWD_M, 0.0, 0.0)
+    c1 = cf()
+    moved = math.hypot(c1["x"] - c0["x"], c1["y"] - c0["y"])
+    if moved < 0.6 * CAL_FWD_M:
+        drive(-CAL_FWD_M, 0.0, 0.0)
+        return _err(f"the Crazyflie moved only {moved * 100:.0f} cm while the rover drove {CAL_FWD_M * 100:.0f} cm: "
+                    "is it on the rover, and tracked?")
+    heading = math.degrees(math.atan2(c1["y"] - c0["y"], c1["x"] - c0["x"]))
+    a0, a1 = math.radians(c0["yaw"]), math.radians(c1["yaw"])
+    cf_yaw = math.degrees(math.atan2(math.sin(a0) + math.sin(a1), math.cos(a0) + math.cos(a1)))
+    yaw_off = ((cf_yaw - heading + 180.0) % 360.0) - 180.0
+    turned = [c1]
+    for _ in range(2):
+        drive(0.0, 0.0, 90.0)
+        turned.append(cf())
+    for _ in range(2):
+        drive(0.0, 0.0, -90.0)
+    drive(-CAL_FWD_M, 0.0, 0.0)
+    psi = [math.radians(p["yaw"] - yaw_off) for p in turned]
+    total = abs(((math.degrees(psi[2] - psi[0]) + 180.0) % 360.0) - 180.0)
+    if abs(total - 180.0) > 30.0:
+        return _err(f"the Crazyflie turned {total:.0f} degrees while the rover turned 180: is it fixed to the rover?")
+    sx = sy = wsum = 0.0                      # p_b - p_a = (R(psi_b) - R(psi_a)) m, solved for the mount m
+    for i, j in ((0, 1), (1, 2), (0, 2)):
+        a, b = math.cos(psi[j]) - math.cos(psi[i]), math.sin(psi[j]) - math.sin(psi[i])
+        w = a * a + b * b
+        if w < 1e-6:
+            continue
+        ddx, ddy = turned[j]["x"] - turned[i]["x"], turned[j]["y"] - turned[i]["y"]
+        sx += a * ddx + b * ddy                # (1/w) [[a, b], [-b, a]] d, weighted by w
+        sy += -b * ddx + a * ddy
+        wsum += w
+    mx, my = sx / wsum, sy / wsum
+    if math.hypot(mx, my) > 0.4:
+        return _err(f"implausible mount ({mx:.2f}, {my:.2f}) m from the rover's centre; tracking may have jumped")
+    from .localization import save_mount
+    from .models import Pose
+    mount = Pose(x=round(mx, 3), y=round(my, 3), yaw=round(yaw_off, 1))
+    loc.set_mount(mount)
+    if getattr(loc, "mount_file", None):
+        save_mount(ctx.arena, mount, loc.mount_file)
+    ctx.store.say("system", f"Riding Crazyflie calibrated: {abs(mx) * 100:.0f} cm {'behind' if mx < 0 else 'ahead of'} "
+                            f"and {abs(my) * 100:.0f} cm {'right' if my < 0 else 'left'} of the rover's centre, "
+                            f"turned {yaw_off:+.0f} degrees from the rover's heading.")
+    return {"ok": True, "mount": {"x": mount.x, "y": mount.y, "yaw": mount.yaw}, "moved_m": round(moved, 3)}
 
 
 @action("rover", needs=(("question",),), checkpoint=True)

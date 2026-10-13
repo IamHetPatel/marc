@@ -97,6 +97,9 @@ def validate_drafts(drafts: list, *, drone_out: bool = False, dock_mode: bool = 
         if (msg := validate_step(d.action, d.robot, d.args())):
             problems.append(f"step {i}: {msg}")
             continue
+        if REGISTRY[d.action].manual_only:
+            problems.append(f"step {i}: {d.action} is for manual control only")
+            continue
         if d.action in DRONE_LAUNCH:
             drone_out = True
         elif d.action in DRONE_RECOVER:

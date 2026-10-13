@@ -57,6 +57,7 @@ class MockWorld:
         self.odom = [0.0, 0.0, 0.0]                                         # what the wheels report
         self.objects = [o.model_dump() for o in arena.mock_objects]
         self.held = None
+        self.rider_mount = arena.mount()    # where the riding Crazyflie REALLY sits (tests turn it to check calibration)
         self.gripper = "closed"
         self.arm_pose = "home"
         if cfg.dock_mode:
@@ -91,7 +92,7 @@ class MockWorld:
 
     def _carry(self):
         if self.held is not None:
-            dx, dy = _rot(GRIP_DIST_M, 0.0, self.rover[2])
+            dx, dy = _rot(self.arena.rover.grip_reach_m, 0.0, self.rover[2])
             self.held["x"], self.held["y"] = self.rover[0] + dx, self.rover[1] + dy
 
     def body_coords(self, obj: dict):
@@ -112,7 +113,7 @@ class MockWorld:
             return None
         focal = (cam.width / 2) / math.tan(half)
         horizon = cam.height * HORIZON
-        k = (cam.grip_line_row - horizon) * GRIP_DIST_M
+        k = (cam.grip_line_row - horizon) * self.arena.rover.grip_reach_m
         return {"col": cam.width / 2 - math.tan(bearing) / math.tan(half) * (cam.width / 2),
                 "row": horizon + k / f, "w": focal * OBJ_WIDTH_M / f, "h": focal * obj["height"] / f,
                 "f": f, "l": l}
@@ -161,7 +162,7 @@ class MockWorld:
         ROVER_RIDER=target that Crazyflie sits on the rover instead, so it reports the rover's true pose."""
         with self.lock:
             if self.cfg.rover_rider == "target":
-                po = self.arena.plate_offset
+                po = self.rider_mount
                 ox, oy = _rot(po.x, po.y, self.rover[2])
                 return {"ok": True, "x": round(self.rover[0] + ox, 3), "y": round(self.rover[1] + oy, 3), "z": 0.3,
                         "yaw": round(_wrap(self.rover[2] + (po.yaw or 0.0)), 2), "state": "landed"}

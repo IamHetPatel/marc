@@ -92,7 +92,7 @@
   /* The use cases on the start screen. Scenario files not listed here still show, with their own title. */
   var USECASE = {
     floor_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Mark it, check it with the camera, and carry it to the disposal zone after a person says yes." },
-    floor_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches the whole field on its own; the rover goes to what it finds." },
+    floor_search_field_a: { title: "Search field A", icon: "target", text: "The scout searches the whole field on its own, marks what it finds and flies back to its pad." },
     floor_mark_and_drive: { title: "Mark and drive", icon: "rover", text: "The scout marks the crash site, the rover drives there. The first thing to get working." },
     floor_mark_and_pick: { title: "Mark and pick", icon: "rover", text: "Mark and drive, then the rover grips the object, brings it back to where it started and lets go." },
     t3_recover_hostile: { title: "Hostile drone in field A", icon: "shield", text: "Find it, check it with the camera, and carry it to the disposal zone after a person says yes." },
@@ -137,7 +137,8 @@
     "docked_drone": "Position from the docked scout", "start_cross+odometry": "Dead reckoning from the start cross",
     "fix+odometry": "Last fix plus wheel odometry", "overhead_camera": "Seen by the overhead camera",
     "crazyflie+odometry": "Anchored from a Crazyflie, then wheel odometry", "lighthouse_rider": "Lighthouse, from the Crazyflie it carries",
-    "rider+odometry": "Last Lighthouse fix plus wheel odometry"
+    "rider+odometry": "Last Lighthouse fix plus wheel odometry",
+    "rider_lost": "Riding Crazyflie lost tracking: the rover holds still", "rider_waiting": "Waiting for the riding Crazyflie"
   };
   function placeName(t) {
     if (t == null) return "";
@@ -493,7 +494,14 @@
     var rp = r.pose || {};
     setText($("rover-x"), r.online ? n2(rp.x) : "–"); setText($("rover-y"), r.online ? n2(rp.y) : "–");
     setText($("rover-h"), r.online && typeof rp.yaw === "number" ? Math.round(((rp.yaw % 360) + 360) % 360) + "°" : "–");
-    setText($("rover-source"), !r.online ? "offline" : (POSE_SOURCE[r.pose_source] || r.pose_source || "no position yet"));
+    setText($("rover-source"), !r.online ? "offline" : (POSE_SOURCE[r.pose_source] || r.pose_source || "no position yet") +
+      (r.rider && r.rider.rejected ? " · " + r.rider.rejected + " glitches ignored" : ""));
+    var rd = r.rider;                                           // riding Crazyflie: calibrate, no anchoring
+    $("rider-row").hidden = !rd; $("anchor-row").hidden = !!rd;
+    setText($("pos-hint"), rd ? "The rover's position comes only from the Crazyflie riding on it (Lighthouse). Calibrate once after mounting it."
+      : "The scout knows exactly where it is; the rover counts wheel turns. Line them up before a run.");
+    if (rd && rd.mount) setText($("rider-info"), "mount " + Math.round(rd.mount.x * 100) + ", " + Math.round(rd.mount.y * 100) +
+      " cm, turned " + Math.round(rd.mount.yaw) + "°");
     var rc = $("rover-chip");
     rc.hidden = !r.online; rc.className = "chip" + (r.holding ? " warn" : ""); setText(rc, r.holding ? "holding" : "free");
     var dp = d.pose || {};
@@ -768,11 +776,19 @@
     var scoutLabel = sv("text", { class: "tag-text", x: 0, y: 30, "text-anchor": "middle", text: "scout" });
     var scout = sv("g", { class: "mk scout landed", id: "mk-scout" }, sv("circle", { class: "scout-halo", r: 16 }),
       sv("path", { class: "scout-arm", d: "M-8 -8L8 8M8 -8L-8 8" }), rotors[0], rotors[1], rotors[2], rotors[3], sv("circle", { class: "scout-core", r: 4.2 }), scoutLabel);
-    var rot = sv("g", { class: "rot" }, sv("line", { class: "rover-ray", x1: 14, y1: 0, x2: 40, y2: 0 }),
-      sv("path", { class: "rover-body", d: "M15 0L4 -10L-12 -10L-12 10L4 10Z" }), sv("circle", { class: "rover-nose", cx: 7, cy: 0, r: 2.2 }));
-    var roverLabel = sv("text", { class: "tag-text", x: 0, y: -18, "text-anchor": "middle", text: "rover" });
+    // the rover to scale (arena.rover: 30 x 24 cm), its nose, where the gripper closes, and the Crazyflie it carries
+    var rb = a.rover || { length_m: 0.3, width_m: 0.24, grip_reach_m: 0.25 };
+    var L = rb.length_m * SCALE, W = rb.width_m * SCALE, G = rb.grip_reach_m * SCALE;
+    var rider = sv("circle", { class: "rover-rider", cx: 0, cy: 0, r: 3.2 });
+    rider.style.display = "none";
+    var rot = sv("g", { class: "rot" }, sv("line", { class: "rover-ray", x1: L / 2, y1: 0, x2: G, y2: 0 }),
+      sv("rect", { class: "rover-body", x: -L / 2, y: -W / 2, width: L, height: W, rx: 3 }),
+      sv("path", { class: "rover-nose", d: "M" + (L / 2 - 2) + " 0L" + (L / 2 - 10) + " -5L" + (L / 2 - 10) + " 5Z" }),
+      sv("circle", { class: "rover-grip", cx: G, cy: 0, r: 3.5 }), rider);
+    var roverLabel = sv("text", { class: "tag-text", x: 0, y: -(W / 2 + 10), "text-anchor": "middle", text: "rover" });
     var rover = sv("g", { class: "mk", id: "mk-rover" }, rot, roverLabel);
     S.markers.target = tgt; S.markers.scout = scout; S.markers.scoutLabel = scoutLabel; S.markers.rover = rover; S.markers.rot = rot;
+    S.markers.rider = rider;
     S.markers.halo = scout.querySelector(".scout-halo");
     var hair = sv("g", { id: "crosshair", style: "display:none" }, sv("line", { class: "xh", id: "xh-v", y1: sy(b.y1), y2: sy(b.y0) }), sv("line", { class: "xh", id: "xh-h", x1: sx(b.x0), x2: sx(b.x1) }));
     S.markers.pad = pad;
@@ -825,8 +841,10 @@
     if (!S.arena || !S.s || !S.markers.rover) return;
     var s = S.s, M = S.markers;
     var r = s.robots.rover, d = s.robots.drone, t = s.robots.target;
+    var b0 = S.arena.bounds;                                       // a tracking glitch metres away must not stretch the map
     var outside = [r && r.pose, d && d.pose, t && t.pose, padPoint()].filter(function (p) {
-      return p && typeof p.x === "number" && !inView(p.x, p.y);
+      return p && typeof p.x === "number" && !inView(p.x, p.y) &&
+        p.x > b0.x0 - 1.5 && p.x < b0.x1 + 1.5 && p.y > b0.y0 - 1.5 && p.y < b0.y1 + 1.5;
     });
     if (outside.length) {
       S.viewExtra = (S.viewExtra || []).concat(outside.map(function (p) { return [p.x, p.y]; }));
@@ -878,6 +896,10 @@
       if (S.roverAngle == null) S.roverAngle = want;
       else S.roverAngle += ((want - S.roverAngle + 540) % 360) - 180;   // shortest way round, never a full spin
       M.rot.style.transform = "rotate(" + S.roverAngle + "deg)";
+      M.rover.setAttribute("class", "mk" + (r.pose_ok === false ? " lost" : ""));
+      var mt = r.rider && r.rider.mount;
+      if (mt) { M.rider.setAttribute("cx", mt.x * SCALE); M.rider.setAttribute("cy", -mt.y * SCALE); M.rider.style.display = ""; }
+      else M.rider.style.display = "none";
     } else M.rover.style.display = "none";
 
     M.pick.replaceChildren();
@@ -956,6 +978,10 @@
     wire("d-mark", function () { return manual("drone", "drone_mark", { x: num("d-x"), y: num("d-y") }); });
     wire("r-goto", function () { return manual("rover", "rover_goto", { x: num("r-x"), y: num("r-y") }); });
     wire("r-home", function () { return api("POST", "/rover/home"); });
+    wire("r-calibrate", function () {
+      if (!window.confirm("The rover drives 25 cm forward, turns half a circle, turns back and reverses. Is there 40 cm of free space around it?")) return null;
+      return manual("rover", "rover_calibrate_rider", {});
+    });
     wire("r-anchor-target", function () { return api("POST", "/rover/anchor", { cf: "target" }); });
     wire("r-anchor-scout", function () { return api("POST", "/rover/anchor", { cf: "scout" }); });
 

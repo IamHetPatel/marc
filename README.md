@@ -20,8 +20,35 @@ The dashboard opens at http://localhost:8002/. Mix and match: `start.py floor --
 drone), `--rover <ep-ip>` (skip the search), `--drone http://<laptop>:8001` (drone server on another laptop),
 `--camera 0` (cage camera on this PC). Webcam on another laptop on the hotspot: run `python camera/stream_webcam.py` there (`pip install opencv-python`), then `start.py floor --camera http://<that-laptop-ip>:8003`. A piece that cannot start (missing package, no robot) is reported in one line and the
 rest keeps running; the dashboard shows that robot offline with the reason. Ctrl-C stops the rover and lands the
-scout before shutting down. Place the rover on the start cross and click **Manual control → Rover is on the start
-cross** to anchor its position. Plan and status of the integration: [docs/integration-plan.md](docs/integration-plan.md).
+scout before shutting down. Plan and status of the integration: [docs/integration-plan.md](docs/integration-plan.md).
+
+**Floor demo with the riding Crazyflie (the way we run it now)**
+
+```bash
+.venv/bin/python start.py floor --rover 192.168.2.1 --no-ai   # EP in direct Wi-Fi mode; no Gemini ("map mode")
+```
+
+The EP is most stable in **direct Wi-Fi mode**: the laptop joins the EP's own Wi-Fi and the EP is always 192.168.2.1.
+That laptop is then off the hotspot, so run everything on it (Crazyradio in its USB port, dashboard on
+http://localhost:8002/). Other laptops cannot open the dashboard and a webcam on another laptop is out of reach,
+unless this laptop also has a second network (phone USB tethering or a USB Ethernet adapter). There is no internet
+either, which `--no-ai` does not need. If the Crazyflies' radio drops while the EP streams, switch the EP's Wi-Fi to
+5.8 GHz in the RoboMaster app (the Crazyradio uses 2.48 GHz).
+
+1. The Crazyflie `...04` rides on the rover's back-right corner; with a radio drone `start.py` sets `ROVER_RIDER=target`.
+   Its Lighthouse pose is then the rover's ONLY position source: no wheel odometry, start cross or anchor is mixed
+   in, and tracking glitches (a read off the map, or a jump faster than the rover can drive) are thrown away. If the
+   rider loses tracking for more than 1 s the rover stops and waits (map: rover drawn faded).
+2. Once after mounting it: **Hands-on control → Calibrate rider** (needs 40 cm free around the rover). The rover
+   drives 25 cm forward, turns half a circle and back; that measures where the Crazyflie sits and how it is turned.
+   The result is kept in `runs/rider_mount.json` and wins over `rider_mount` in `manager/arena.floor.json`.
+3. Measure `rover.grip_reach_m` in `manager/arena.floor.json`: from the centre of the four wheels to the middle of the
+   open jaws with the arm in *pick*. `rover_approach` puts the bottle's spot exactly there (within 2 cm).
+4. Put the bottle on the scenario's spot (`floor_*` scenarios: x -0.2, y 0.0) and run **Recover a hostile drone**.
+   The rover drives up facing it, lines the gripper up on the spot, grips, and carries it to the disposal zone.
+
+Without a rider (`ROVER_RIDER` unset) the old way still works: place the rover on the start cross and click
+**Rover is on the start cross**, or anchor it from a Crazyflie.
 
 ---
 

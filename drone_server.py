@@ -9,7 +9,7 @@ Env:
   SCOUT_URI   radio URI of the flying drone (default: the one confirmed by cfclient)
   TARGET_URI  radio URI of the floor drone (default ...04, rides on the rover; only read, never flown); empty = none
   CAGE        "x0,y0,x1,y1,zmax" geofence in metres (default: DEFAULT_CAGE, measured on the floor)
-  GEOFENCE=0  stop enforcing the cage (x/y limits, lost-tracking check); on by default
+  GEOFENCE=0  stop enforcing the cage x/y limits (the lost-tracking check stays on); on by default
   MOCK=1      no radio; flights take real time / MOCK_TIME_SCALE, the target sits at MOCK_TARGET="x,y" (default 1.0,0.3)
               and the scout starts on MOCK_PAD="x,y" (default: the cage's x0,y0 corner)
 """
@@ -71,8 +71,8 @@ def _outside_cage(x, y, z=None, margin=0.0):
 
 
 def _sane(p):
-    if not GEOFENCE:
-        return True
+    """Tracking check, on even with GEOFENCE=0: a Lighthouse dropout reports nonsense like y = -4 m, and passing that
+    on makes the rover (riding Crazyflie) or the scout appear at random places."""
     m = SANE_MARGIN_M
     return (CAGE["x0"] - m <= p["x"] <= CAGE["x1"] + m and CAGE["y0"] - m <= p["y"] <= CAGE["y1"] + m
             and -0.5 <= p["z"] <= CAGE["z_max"] + m)

@@ -56,6 +56,7 @@ class Config:
     detector_noise_m: float = 0.05
     detector_miss_p: float = 0.05
     rover_rider: str = ""                # ROVER_RIDER=target|scout: that Crazyflie rides on the EP and IS its position
+    rover_rider_mode: str = "filtered"   # filtered: the rider only, glitches rejected | blend: rider + wheel odometry
     separation_m: float = 0.5            # a low drone must stay this far (x/y) from where the rover is going
     scenario: str = ""                   # SCENARIO=<name>: load this scenario at server start
     # --- overhead webcam backup (manager/overhead.py): OVERHEAD_CAM=0 | /dev/video0 | rtsp://... | frame.jpg
@@ -90,6 +91,7 @@ class Config:
             detector_miss_p=_float("DETECTOR_MISS_P", cls.detector_miss_p),
             separation_m=_float("SEPARATION_M", cls.separation_m),
             rover_rider=os.getenv("ROVER_RIDER", cls.rover_rider).strip().lower(),
+            rover_rider_mode=os.getenv("ROVER_RIDER_MODE", cls.rover_rider_mode).strip().lower(),
             scenario=os.getenv("SCENARIO", cls.scenario),
             overhead_cam=os.getenv("OVERHEAD_CAM", cls.overhead_cam),
             overhead_width=int(os.getenv("OVERHEAD_WIDTH", cls.overhead_width)),

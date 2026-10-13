@@ -122,8 +122,8 @@ class RuleSupervisor:
         if trigger.kind == "step_failed" and step is not None:
             err = str(res.get("error", ""))
             if res.get("blocked") == "mentor":
-                return SupervisorDecision(decision="ask_human", reason="The drone is locked until a mentor is "
-                                          "present. Switch the mentor toggle on, then reply to continue.")
+                return SupervisorDecision(decision="ask_human", reason="The drone is locked until a safety pilot is "
+                                          "present. Switch the Safety pilot toggle on, then reply to continue.")
             if res.get("offline"):
                 return SupervisorDecision(decision="abort", reason=f"The {res['offline']} is unreachable: {err}")
             if step.action == "request_authorization":

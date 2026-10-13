@@ -1,4 +1,4 @@
-"""The squads' pieces together: the floor arena against drone_server.py's cage, the telemetry monitor against what the
+"""The pieces together: the floor arena against drone_server.py's cage, the telemetry monitor against what the
 real servers say, the rover video relay, and the mothership driving the real drone_server.py process (mock radio)."""
 import dataclasses
 import os
@@ -35,8 +35,8 @@ def _inside(inner: Rect, outer: Rect) -> bool:
 
 # ---------------------------------------------------------------- the floor arena
 def test_floor_arena_cage_is_the_drone_servers_cage():
-    """Two geofences for one cage: if the drone squad re-measures, both files must move together."""
-    m = re.search(r'DEFAULT_CAGE = "([^"]+)"', (ROOT / "drone_server.py").read_text())
+    """Two geofences for one cage: if the cage is re-measured, both files must move together."""
+    m = re.search(r'DEFAULT_CAGE = "([^"]+)"', (ROOT / "drone" / "drone_server.py").read_text())
     x0, y0, x1, y1, z_max = (float(v) for v in m.group(1).split(","))
     a = load_arena(FLOOR)
     assert (a.drone_cage.x0, a.drone_cage.y0, a.drone_cage.x1, a.drone_cage.y1, a.drone_z_max) == (x0, y0, x1, y1, z_max)
@@ -146,7 +146,7 @@ def drone_server(request):
         port = s.getsockname()[1]
     env = {**os.environ, "MOCK": "1", "MOCK_TIME_SCALE": "50", "PORT": str(port),
            **getattr(request, "param", {})}
-    proc = subprocess.Popen([sys.executable, str(ROOT / "drone_server.py")], cwd=ROOT, env=env,
+    proc = subprocess.Popen([sys.executable, str(ROOT / "drone" / "drone_server.py")], cwd=ROOT, env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     url = f"http://127.0.0.1:{port}"
     try:

@@ -45,7 +45,7 @@ def build_ctx(cfg: Optional[Config] = None, store: Optional[Store] = None, llm: 
     # the mock rover on the scaled simulated clock).
     trust_drone_fix = cfg.dock_mode and (mock_rover or not mock_drone)
     overhead_fix = overhead is not None and not mock_rover and cfg.overhead_cam != "mock"
-    if cfg.rover_rider:                         # the riding Crazyflie is the ONLY position source
+    if cfg.rover_rider and cfg.rover_rider_mode != "blend":   # the riding Crazyflie is the ONLY position source
         loc = RiderLocalization(rover, drone, arena, clock, rider=cfg.rover_rider,
                                 mount_file=None if mock_rover else MOUNT_FILE)
     else:

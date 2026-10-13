@@ -18,7 +18,7 @@ DRONE_LAUNCH = {"drone_scan", "drone_goto", "drone_takeoff", "drone_mark", "dron
 DRONE_RECOVER = {"drone_dock", "drone_land", "drone_home"}
 
 HEADER = """\
-You are the mission planner of FleetPilot, a human-supervised team of two robots that recover crashed drones from
+You are the mission planner of MARC, a human-supervised team of two robots that recover crashed drones from
 farmland. A drone has come down somewhere in a field. It may be hostile and carry explosives, or it may be one of ours.
 
 ROBOTS

@@ -1,6 +1,6 @@
 {
   "kind": "floor",
-  "_note": "The real floor, in the Lighthouse frame of calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. FIELD: 5 m (x) by 3 m (y), assumed centred on the Lighthouse origin (which is inside the net): x -2.5..2.5, y -1.5..1.5. CHECK on the floor: put a Crazyflie in two opposite corners and read its pose; if the field is shifted or the long side runs along y, change bounds, drone_cage, zones and home here AND drone_server.py DEFAULT_CAGE (tests/test_integration.py keeps the two cages equal). drone_cage = bounds 0.3 m in from each wall. Zones, home, launch pad and overhead tags are provisional; measure them with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
+  "_note": "The real floor, in the Lighthouse frame of drone/calibration.yaml (metres, yaw degrees CCW). Use it with ARENA=manager/arena.floor.json. FIELD: 5 m (x) by 3 m (y), assumed centred on the Lighthouse origin (which is inside the net): x -2.5..2.5, y -1.5..1.5. CHECK on the floor: put a Crazyflie in two opposite corners and read its pose; if the field is shifted or the long side runs along y, change bounds, drone_cage, zones and home here AND drone_server.py DEFAULT_CAGE (tests/test_integration.py keeps the two cages equal). drone_cage = bounds 0.3 m in from each wall. Zones, home, launch pad and overhead tags are provisional; measure them with the target Crazyflie as a wand and set calibrated:true. manager/arena.json stays the mock/test arena.",
   "calibrated": false,
   "_view_note": "view = what the dashboard map shows: the 5 x 3 m field plus a 0.4 m margin (the map also grows by itself if a robot or the pad is outside). launch_pad = where the scout sits before takeoff; the drone server reports the real one (its first takeoff spot) once it has flown. Measure it and fill it in.",
   "view": {
@@ -28,8 +28,8 @@
     "z_max": 1.2
   },
   "home": {
-    "x": -2.0,
-    "y": 0.45,
+    "x": -2.1,
+    "y": 0.9,
     "yaw": 0.0
   },
   "plate_offset": {
@@ -134,8 +134,8 @@
     }
   ],
   "_cage_note": "drone_cage measured 2026-10-11: largest x/y-aligned box inside the drone's Lighthouse reception corners (2.208,-0.683) (1.96,1.18 from 2026-10-10) (-2.551,1.195) (-1.633,-0.755); no inset. Same as drone_server.py DEFAULT_CAGE.",
-  "_zones_note": "Zones fitted 2026-10-11 to the Lighthouse reception area (= drone_cage): with ROVER_RIDER=target the rover's position comes from the riding Crazyflie, so everything the rover drives to must be where Lighthouse reaches. disposal moved from the bottom-left corner (no reception there: the -x side of the reception area slants) to x -1.6..-0.9, y -0.68..0; field_a = x -0.8..0.6, field_b = x 0.6..1.96, both y -0.68..1.18. base holds the rover start (see _home_note). launch_pad = the scout's pad measured with the cage.",
-  "_plate_note": "plate_offset is the docking plate (DOCK_MODE). The riding Crazyflie uses rider_mount.",
+  "_zones_note": "Zones fitted 2026-10-11 to the Lighthouse reception area (= drone_cage): with ROVER_RIDER=target the rover's position comes from the riding Crazyflie, so everything the rover drives to must be where Lighthouse reaches. disposal moved from the bottom-left corner (no reception there: the -x side of the reception area slants) to x -1.6..-0.9, y -0.68..0; field_a = x -0.8..0.6, field_b = x 0.6..1.96, both y -0.68..1.18. base keeps the rover start (-2.1, 0.9), which is inside reception at that y. launch_pad = the scout's pad measured with the cage.",
+  "_plate_note": "plate_offset is the docking plate (DOCK_MODE); the riding Crazyflie uses rider_mount (same values).",
   "goto_tolerance_m": 0.1,
   "_goto_note": "rover_goto counts as arrived within goto_tolerance_m (or within twice that once it stops making progress for 4 s). It stops 0.6 m short of a drone finding unless the step sets standoff (rover centre to object) or gap (gripper to object), and ends facing it. The rover's position is the riding Crazyflie's Lighthouse pose through rider_mount (ROVER_RIDER=target).",
   "rover": {
@@ -145,10 +145,9 @@
     "_note": "EP footprint 30 x 24 cm. grip_reach_m = from the centre of the four wheels (what it turns about) to where the gripper holds an object with the arm in pick. ESTIMATE: put the object between the open jaws and measure it. rover_approach (map mode) puts the object's spot there; rover_goto gap is measured from there (standoff = grip_reach_m + gap)."
   },
   "rider_mount": {
-    "x": -0.11,
-    "y": -0.09,
+    "x": -0.05,
+    "y": -0.05,
     "yaw": 0.0,
-    "_note": "The riding Crazyflie (...04) in the ROVER frame (x forward, y left, metres) and its heading minus the rover's (deg). Estimate from the 2026-10-11 photo: back-right corner of the 30 x 24 cm rover. Run Manual control > 'Calibrate rider' once on the floor (25 cm forward, half a turn, back): it measures all three and keeps them in runs/rider_mount.json, which wins over this."
-  },
-  "_home_note": "home = the rover's start and where it brings our own drones: (-2.0, 0.45) in the base zone, 0.47 m from the scout's pad (-1.84, 0.92) so the rover never parks on it; inside Lighthouse reception (its -x edge is at x -2.2 for this y)."
+    "_note": "The riding Crazyflie (...04) in the ROVER frame (x forward, y left, metres) and its heading minus the rover's (deg): back-right corner, about 5 cm back and 5 cm right of centre, the values used in the floor demonstrations (estimate). Hands-on control > 'Calibrate rider' (25 cm forward, half a turn, back) measures all three and keeps them in runs/rider_mount.json, which wins over this."
+  }
 }

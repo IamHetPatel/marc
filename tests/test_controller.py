@@ -249,7 +249,7 @@ def test_mentor_gate_asks_the_human_then_the_scan_is_retried(make_ctrl):
     wait_status(c, "awaiting_approval")
     c.approve(c.store.mission.plan_version)
     wait_for(lambda: c.store.mission.pending_question is not None, what="mentor question")
-    assert "mentor" in c.store.mission.pending_question
+    assert "safety pilot" in c.store.mission.pending_question
     c.set_mentor(True)
     c.change("mentor is here")
     wait_status(c, "done", "failed")

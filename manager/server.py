@@ -83,7 +83,7 @@ def create_app(controller: Optional[Controller] = None) -> FastAPI:
         yield
         app.state.ctrl.shutdown()
 
-    app = FastAPI(title="FleetPilot AI manager", lifespan=lifespan)
+    app = FastAPI(title="MARC mission manager", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     def ctrl() -> Controller:

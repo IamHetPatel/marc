@@ -4,7 +4,7 @@ The Crazyflies have no camera, so "seeing" the crashed drone is a sensor model: 
 height z, a target counts as seen when it lies inside the footprint a real downward camera would have
 (radius z * tan(FOV/2)), with Gaussian position noise and a chance of missing it. The scout really has to fly
 the pattern; nothing here lets it read the answer. The truth comes from the target Crazyflie's own Lighthouse
-pose (live) or from a scenario file (fixed). In the pitch: Lighthouse stands in for RTK-GPS and this detector
+pose (live) or from a scenario file (fixed). In this lab setup Lighthouse stands in for RTK-GPS and this detector
 stands in for a camera; everything after detection is real.
 """
 import math

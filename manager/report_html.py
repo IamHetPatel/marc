@@ -140,7 +140,7 @@ def render(report: dict, images: dict) -> str:
 <div class="bar"><a href="/report" target="_blank" rel="noopener">JSON</a><button onclick="window.print()">Save as PDF</button></div>
 <main class="page">
   <header>
-    <div class="brand">FleetPilot · mission report</div>
+    <div class="brand">MARC · mission report</div>
     <h1>{escape(str(m.get('text') or 'Mission'))}</h1>
     <span class="verdict {escape(status)}">{escape(STATUS_WORD.get(status, status))}</span>
     {f'<p class="muted">{escape(str(m["error"]))}</p>' if m.get("error") else ''}

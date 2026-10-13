@@ -280,7 +280,7 @@ class Controller:
     def set_mentor(self, present: bool):
         self.store.mentor_present = bool(present)
         self.store.event("mentor", present=bool(present))
-        self.store.say("system", "Mentor present: drone unlocked." if present else "Mentor left: drone locked.")
+        self.store.say("system", "Safety pilot present: drone unlocked." if present else "Safety pilot left: drone locked.")
 
     def start(self):
         """Start the telemetry monitor. Safe to call more than once."""

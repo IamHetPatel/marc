@@ -1,5 +1,4 @@
-# Everything: mothership, rover server, drone server. Or install just the piece you run:
-#   requirements-manager.txt (mothership), rover/requirements.txt, requirements-drone.txt
--r requirements-manager.txt
+# Everything: mission manager, rover server, drone server. Or install just the piece you run.
+-r manager/requirements.txt
 -r rover/requirements.txt
--r requirements-drone.txt
+-r drone/requirements.txt

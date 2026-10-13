@@ -133,7 +133,7 @@ class Link:
                     raise RuntimeError(
                         f"cannot reach {self.uri}. Check: drone powered and booted (LEDs on), battery, "
                         "no cfclient or other script connected to it, radio not on a USB hub, drone within a "
-                        "few metres. `python3 scan_drones.py` lists the drones the radio can hear.") from e
+                        "few metres. `python3 drone/scan_drones.py` lists the drones the radio can hear.") from e
                 time.sleep(2.0)
         print(f"Connected to {self.uri}")
         lg = LogConfig(name="state", period_in_ms=100)
@@ -188,10 +188,10 @@ class Link:
         elif "bsReceive" in lh and not out["receiving"]:
             out["hint"] = "no base station seen: are they powered (green LED)? is the deck facing up with a clear view?"
         elif "bsGeoVal" in lh and not out["geometry"]:
-            out["hint"] = ("drone has no base-station geometry: write calibration.yaml to it "
+            out["hint"] = ("drone has no base-station geometry: write drone/calibration.yaml to it "
                            "(cfclient > Lighthouse > Manage geometry > Load, then Write to Crazyflie)")
         elif out["receiving"] and not set(out["receiving"]) & set(out["geometry"]):
-            out["hint"] = "the stations it sees have no geometry stored: re-write calibration.yaml"
+            out["hint"] = "the stations it sees have no geometry stored: re-write drone/calibration.yaml"
         return out
 
     def _on_log(self, _ts, data, _conf):

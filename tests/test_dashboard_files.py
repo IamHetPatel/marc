@@ -23,7 +23,7 @@ def test_the_dashboard_is_served_and_the_root_redirects_to_it(client):
     r = client.get("/", follow_redirects=False)
     assert r.status_code in (302, 307) and r.headers["location"] == "/ui/"
     page = client.get("/ui/")
-    assert page.status_code == 200 and "text/html" in page.headers["content-type"] and "FleetPilot" in page.text
+    assert page.status_code == 200 and "text/html" in page.headers["content-type"] and "MARC" in page.text
     assert "javascript" in client.get("/ui/app.js").headers["content-type"]
     assert "text/css" in client.get("/ui/style.css").headers["content-type"]
 

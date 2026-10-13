@@ -1,4 +1,4 @@
-/* FleetPilot mothership dashboard. Plain JS, no framework, no CDN.
+/* MARC mission control dashboard. Plain JS, no framework, no CDN.
  *
  * Reads GET /state every 500 ms and draws it; every control is one request back to the mothership.
  * The DOM is updated in place (keyed by step id, finding id, message index) rather than rebuilt, so CSS

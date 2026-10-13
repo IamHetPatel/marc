@@ -148,3 +148,11 @@ def test_a_lost_rider_stops_the_drive_instead_of_guessing(floor, monkeypatch):
     monkeypatch.setattr(ctx.drone, "pose", lambda cf="scout": {"ok": False, "error": "no pose"})
     r = run_action(ctx, "rover_goto", {"x": 0.5, "y": 0.5})
     assert r["ok"] is False and "lost the rover's position" in r["error"]
+
+
+def test_blend_mode_keeps_the_rider_plus_odometry_localization(cfg, monkeypatch):
+    """ROVER_RIDER_MODE=blend: the rider fix bridged by wheel odometry, as used in the floor demonstrations."""
+    from manager.localization import Localization
+    monkeypatch.setenv("ARENA", FLOOR)
+    ctx, _ = build_ctx(dataclasses.replace(cfg, rover_rider="target", rover_rider_mode="blend"))
+    assert type(ctx.loc) is Localization and ctx.loc.rider == "target"

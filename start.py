@@ -43,12 +43,12 @@ MODES = {                     # mode -> (rover, drone, arena)
     "floor": ("auto", "radio", "manager/arena.floor.json"),
 }
 NEEDS = {                     # what each piece imports, and where it comes from
-    "mothership": (["fastapi", "uvicorn", "pydantic", "requests", "PIL", "yaml"], "requirements-manager.txt"),
+    "mothership": (["fastapi", "uvicorn", "pydantic", "requests", "PIL", "yaml"], "manager/requirements.txt"),
     "rover": (["PIL"], "rover/requirements.txt"),
     "rover-real": (["av"], "rover/requirements.txt"),
-    "drone": (["flask"], "requirements-drone.txt"),
-    "drone-radio": (["cflib"], "requirements-drone.txt"),
-    "camera": (["cv2"], "requirements-manager.txt"),
+    "drone": (["flask"], "drone/requirements.txt"),
+    "drone-radio": (["cflib"], "drone/requirements.txt"),
+    "camera": (["cv2"], "manager/requirements.txt"),
 }
 QUIET = re.compile(r'"(GET|POST|HEAD) [^"]*" 2\d\d')     # a successful request: polled several times a second
 TTY = sys.stdout.isatty()
@@ -187,7 +187,7 @@ def plan(args) -> tuple:
         env = {"PORT": str(PORTS["drone"]), "MOCK": "1" if drone == "mock" else "0"}
         if drone == "mock":
             env.setdefault("MOCK_TIME_SCALE", os.getenv("MOCK_TIME_SCALE", "5"))
-        pieces.append(Piece("drone", py + ["drone_server.py"], env, f"http://localhost:{PORTS['drone']}/health", 45,
+        pieces.append(Piece("drone", py + ["drone/drone_server.py"], env, f"http://localhost:{PORTS['drone']}/health", 45,
                             ["drone"] + ([] if drone == "mock" else ["drone-radio"])))
         drone_url = f"http://localhost:{PORTS['drone']}"
 

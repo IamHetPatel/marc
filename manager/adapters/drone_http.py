@@ -1,4 +1,4 @@
-"""HTTP client for the drone squad's server (:8001). The server must be threaded so /land works mid-scan."""
+"""HTTP client for drone/drone_server.py (:8001). The server must be threaded so /land works mid-scan."""
 from .rover_http import HttpClient
 
 

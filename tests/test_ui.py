@@ -1,6 +1,6 @@
 """The dashboard in a real browser against the real server on mock robots. Opt-in:
 
-    uv pip install --python .venv/bin/python -r requirements-ui-tests.txt && .venv/bin/playwright install chromium
+    uv pip install --python .venv/bin/python -r tests/requirements-ui.txt && .venv/bin/playwright install chromium
     .venv/bin/python -m pytest -m ui
 
 These checks exist because the unit tests cannot see layout: a first version buried the authorization question

@@ -14,7 +14,7 @@ class Safety:
     # ------------------------------------------------------------ gates (return an error string or None)
     def mentor_gate(self) -> Optional[str]:
         if not self.store.mentor_present:
-            return "mentor gate: drone tools are locked until a mentor is present (POST /mentor)"
+            return "safety pilot: drone tools are locked until a safety pilot is present (POST /mentor)"
         return None
 
     def rover_target(self, x: float, y: float) -> Optional[str]:

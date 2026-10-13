@@ -553,7 +553,7 @@ def rover_goto(ctx: Ctx, args: dict) -> dict:
         settled = ctx.clock.now() - t_best > GOTO_STALL_S
         if err <= tol or (settled and err <= 2 * tol):
             ctx.rover.stop()
-            if loc["kind"] == "finding" and distance(pose.x, pose.y, loc["x"], loc["y"]) > 0.15:
+            if loc["kind"] == "finding" and distance(pose.x, pose.y, loc["x"], loc["y"]) > 0.05:
                 info["turned_deg"] = _face(ctx, loc["x"], loc["y"])     # camera and gripper point at it
                 info["facing_error_deg"] = round(_bearing_to(ctx.loc.rover_pose(), loc["x"], loc["y"]), 1)
             return {"ok": True, "arrived": True, **info}

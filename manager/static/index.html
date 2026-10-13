@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>FleetPilot Mothership</title>
+  <title>MARC Mission Control</title>
   <script>
     /* Set the theme before first paint so there is no flash. Storage can throw (private windows): that is fine. */
     (function () {
@@ -51,7 +51,7 @@
   <header class="topbar">
     <div class="brand">
       <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" class="ring"/><path d="M16 2.5v6M16 23.5v6M2.5 16h6M23.5 16h6" class="cross"/><circle cx="24.6" cy="7.4" r="2.7" class="orbit"/></svg>
-      <div class="brand-text"><b>FleetPilot</b><span>Drone recovery</span></div>
+      <div class="brand-text"><b>MARC</b><span>Drone recovery</span></div>
     </div>
 
     <nav class="vnav" role="tablist" aria-label="Sections">
@@ -65,8 +65,8 @@
         <span class="light off" id="light-drone"><i></i><span>Scout</span></span>
         <span class="light off" id="light-target"><i></i><span>Target</span></span>
       </div>
-      <label class="mentor" title="Drone flights stay locked until a mentor is present">
-        <input class="switch" type="checkbox" id="mentor"><span>Mentor</span>
+      <label class="mentor" title="Drone flights stay locked until a safety pilot is present">
+        <input class="switch" type="checkbox" id="mentor"><span>Safety pilot</span>
       </label>
       <button id="theme" class="icon-btn" type="button" title="Switch light / dark theme" aria-label="Switch light or dark theme">
         <svg class="ic ic-moon"><use href="#i-moon"/></svg><svg class="ic ic-sun"><use href="#i-sun"/></svg>
@@ -132,7 +132,7 @@
             </div>
           </section>
 
-          <!-- idle: what FleetPilot does, and the use cases to start from -->
+          <!-- idle: what MARC does, and the use cases to start from -->
           <section class="card start" id="start-panel">
             <h2 class="pitch">Send robots, not people.</h2>
             <p class="pitch-sub">A scout drone searches the field, a ground rover checks and recovers what it finds, and a person approves every risky step.</p>

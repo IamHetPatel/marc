@@ -1,5 +1,5 @@
 """Drone server (:8001): wraps cflib for the scout Crazyflie (flies) and an optional target Crazyflie
-(sits on the floor and only reports its Lighthouse pose). Contract: docs/mothership-plan.md §4.2.
+(sits on the floor and only reports its Lighthouse pose). Contract: docs/history/mothership-plan.md §4.2.
 
 Every flight command goes through the high-level commander with a computed duration, and every wait is
 sliced so /land (from another request thread) can cut in at any moment: it bumps an abort generation,

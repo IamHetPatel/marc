@@ -171,7 +171,7 @@ References: `$finding.<id>`, `$zone.<name>`, `$home`, or `"x,y"`.
 
 ### 4.1 WP-R1: `robot_server.py` (Windows laptop, Python 3.8, port 8000)
 
-> **As built (`rover/robot_server.py`):** the endpoints, lock, watchdog and `MOCK=1` rules below hold, but it talks DJI's **plaintext SDK** over TCP (like the rover squad's `control1.py`) instead of the `robomaster` package. So it runs on any Mac/Linux laptop on the hotspot, with the EP in STA mode (`ROBOT_HOST=<ep-ip>`). Extras: `/health` also reports camera and last action, `/pose?reset=1`, `/arm` with no params reads the position (for tuning presets), and a teleop page at `/`. See [rover/README.md](../rover/README.md).
+> **As built (`rover/robot_server.py`):** the endpoints, lock, watchdog and `MOCK=1` rules below hold, but it talks DJI's **plaintext SDK** over TCP (like the rover squad's `control1.py`) instead of the `robomaster` package. So it runs on any Mac/Linux laptop on the hotspot, with the EP in STA mode (`ROBOT_HOST=<ep-ip>`). Extras: `/health` also reports camera and last action, `/pose?reset=1`, `/arm` with no params reads the position (for tuning presets), and a teleop page at `/`. See [rover/README.md](../../rover/README.md).
 
 **Goal:** wrap the RoboMaster SDK in a small threaded HTTP server.
 

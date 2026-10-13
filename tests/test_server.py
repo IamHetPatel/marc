@@ -1,4 +1,4 @@
-"""The HTTP contract the dashboard builds against (docs/ai-manager-plan.md §9)."""
+"""The HTTP contract the dashboard builds against (docs/history/ai-manager-plan.md §9)."""
 import time
 
 import pytest

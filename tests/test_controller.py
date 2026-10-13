@@ -1,4 +1,4 @@
-"""Mission state machine (docs/ai-manager-plan.md §4): transitions, stale approvals, Stop from every state,
+"""Mission state machine (docs/history/ai-manager-plan.md §4): transitions, stale approvals, Stop from every state,
 live changes, ask_human, replan budget."""
 import threading
 import time

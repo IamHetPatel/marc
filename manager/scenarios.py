@@ -1,4 +1,4 @@
-"""Scenario files (docs/mothership-plan.md WP-M5): a hand-written plan and/or a mission sentence, plus the ground
+"""Scenario files (docs/history/mothership-plan.md WP-M5): a hand-written plan and/or a mission sentence, plus the ground
 truth of what lies in the field. They are how the demo works without any LLM (plan source "scenario").
 
 The file name (without .yaml) is the scenario's id, the thing `POST /scenarios/{name}/load` takes.

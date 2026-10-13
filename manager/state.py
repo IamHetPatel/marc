@@ -1,6 +1,6 @@
 """Thread-safe mission store. The controller/executor write, the HTTP layer reads `to_json()`.
 
-`to_json()` is the /state contract from docs/ai-manager-plan.md §9. Fields may be added, never renamed.
+`to_json()` is the /state contract from docs/history/ai-manager-plan.md §9. Fields may be added, never renamed.
 """
 import threading
 import time

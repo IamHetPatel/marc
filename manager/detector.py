@@ -1,4 +1,4 @@
-"""Simulated downward camera for the scout (docs/mothership-plan.md §1.5), and the search pattern it flies.
+"""Simulated downward camera for the scout (docs/history/mothership-plan.md §1.5), and the search pattern it flies.
 
 The Crazyflies have no camera, so "seeing" the crashed drone is a sensor model: while the scout hovers at
 height z, a target counts as seen when it lies inside the footprint a real downward camera would have

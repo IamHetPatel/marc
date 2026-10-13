@@ -1,6 +1,6 @@
 """Mock world: a rover and a drone that behave like the real ones closely enough to run the whole mission.
 
-This is also our Level-3 backup demo (docs/ai-manager-plan.md §12). What it models on purpose:
+This is also our Level-3 backup demo (docs/history/ai-manager-plan.md §12). What it models on purpose:
   * rover wheel odometry that drifts (scale error, strafing drifts more) in its own frame
   * a scout drone. With DOCK_MODE=0 (default) it starts landed on a launch pad beside the rover; with DOCK_MODE=1
     it rides the rover's plate and can only dock if the rover has not moved since takeoff. Scans with +-10 cm

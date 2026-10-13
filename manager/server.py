@@ -1,4 +1,4 @@
-"""FastAPI app on :8002, the contract for the dashboard (docs/ai-manager-plan.md §9).
+"""FastAPI app on :8002, the contract for the dashboard (docs/history/ai-manager-plan.md §9).
 
     POST /mission {"text"}   POST /approve {"plan_version"}   POST /change {"text"}   POST /stop
     POST /mentor {"present"} POST /reset                      GET /state              GET /images/{id}.jpg

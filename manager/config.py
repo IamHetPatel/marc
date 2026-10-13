@@ -48,7 +48,7 @@ class Config:
     rover_speed_y_sign: float = 1.0
     rover_drive_y_sign: float = 1.0
     rover_arm_mode: str = "preset"       # "preset" -> /arm?preset=pick ; "relative" -> /arm?x&y deltas
-    # --- farmland story (docs/mothership-plan.md §1.4, §1.5): no docking, a simulated downward-camera detector
+    # --- farmland story (docs/history/mothership-plan.md §1.4, §1.5): no docking, a simulated downward-camera detector
     dock_mode: bool = False              # DOCK_MODE=1 brings back "drone rides the rover plate" (ai-manager-plan §7)
     search_z: float = 0.6                # scout height while searching (m)
     mark_z: float = 0.4                  # scout height while hovering over a marked spot (m); the EP is ~0.3 m tall

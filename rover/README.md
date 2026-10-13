@@ -2,7 +2,7 @@
 
 Two ways to drive the DJI RoboMaster EP, both over the robot's plaintext SDK (no `robomaster` package):
 
-- **`robot_server.py`**: the rover **HTTP API** on port 8000. The mothership, curl and a browser teleop page all use it. Use this for the demo.
+- **`robot_server.py`**: the rover **HTTP API** on port 8000. The mission manager, curl and a browser teleop page all use it.
 - **`control1.py`**: the original stand-alone browser teleop (EP in AP mode). See [Stand-alone teleop](#stand-alone-teleop-control1py) below.
 
 The EP accepts **one** SDK controller at a time, so run only one of them.

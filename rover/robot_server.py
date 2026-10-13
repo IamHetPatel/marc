@@ -1,4 +1,4 @@
-"""RoboMaster EP HTTP server (WP-R1, docs/mothership-plan.md §4.1).
+"""RoboMaster EP HTTP server (WP-R1, docs/history/mothership-plan.md §4.1).
 
 The mothership (manager/adapters/rover_http.py), curl and the browser teleop page all reach the robot through
 this one process, because the EP takes only one SDK controller at a time. It speaks DJI's plaintext SDK over
@@ -13,7 +13,7 @@ The server starts even if the EP is not on yet, and reconnects by itself after a
 the EP is away every call answers at once with the reason (HTTP 503, /health says why).
     curl "http://localhost:8000/drive?x=0.3"
 
-API conventions (the contract in docs/mothership-plan.md §3.1): metres and degrees, body frame x forward,
+API conventions (the contract in docs/history/mothership-plan.md §3.1): metres and degrees, body frame x forward,
 y LEFT, z = turn LEFT (counter-clockwise). DJI documents the SDK as +y = right and +z = clockwise, so the
 server negates both (SDK_Y_SIGN / SDK_Z_SIGN default to -1). Floor check (F1 step 5): /drive?y=0.3 must strafe
 left seen from behind, /drive?z=45 must turn counter-clockwise seen from above; flip the env var that is wrong.

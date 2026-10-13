@@ -1,5 +1,5 @@
 {
-  "_note": "PLACEHOLDER VALUES. Everything marked calibrated:false must be measured on the floor with the target Crazyflie as a wand (docs/mothership-plan.md F1). Metres, Lighthouse frame, yaw in degrees.",
+  "_note": "PLACEHOLDER VALUES. Everything marked calibrated:false must be measured on the floor with the target Crazyflie as a wand (docs/history/mothership-plan.md F1). Metres, Lighthouse frame, yaw in degrees.",
   "calibrated": false,
   "bounds": {"x0": 0.0, "y0": 0.0, "x1": 4.0, "y1": 3.0},
   "drone_cage": {"x0": 0.3, "y0": 0.3, "x1": 3.7, "y1": 2.7, "z_max": 1.2},
